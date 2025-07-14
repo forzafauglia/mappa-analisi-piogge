@@ -8,6 +8,7 @@ import matplotlib.colors as colors
 
 # --- 1. FUNZIONE PER GOOGLE ANALYTICS ---
 def inject_ga():
+    # ... (questa funzione rimane identica)
     GA_MEASUREMENT_ID = st.secrets.get("ga_measurement_id", "")
     if GA_MEASUREMENT_ID:
         GA_SCRIPT = f"""
@@ -26,41 +27,55 @@ st.set_page_config(page_title="Analisi Piogge", layout="wide")
 inject_ga()
 st.title("💧 Analisi Precipitazioni – by Bobo56043 💧")
 
-# --- 3. CARICAMENTO E PREPARAZIONE DATI ---
+# --- 3. CARICAMENTO E PREPARAZIONE DATI (NUOVA VERSIONE ATOMICA) ---
 SHEET_URL = (
     "https://docs.google.com/spreadsheets/"
     "d/1G4cJPBAYdb8Xv-mHNX3zmVhsz6FqWf_zE14mBXcs5_A/gviz/tq?tqx=out:csv"
 )
 
 @st.cache_data(ttl=3600)
-def load_and_clean_data():
-    """Carica i dati e pulisce immediatamente i nomi delle colonne."""
+def get_clean_dataframe():
+    """
+    Questa funzione esegue tutte le operazioni di caricamento e pulizia in un unico blocco.
+    Restituisce un DataFrame garantito per essere pulito.
+    """
+    # Step 1: Carica i dati
     df = pd.read_csv(SHEET_URL, na_values=["#N/D", "#N/A"])
-    # Pulizia immediata dei nomi delle colonne da spazi extra
+
+    # Step 2: Pulisci i nomi delle colonne da spazi extra
     df.columns = df.columns.str.strip()
+
+    # Step 3: Definisci i nomi delle colonne PULITE che useremo
+    col_pioggia = 'Piogge entro 5 gg'
+    col_x = 'X'
+    col_y = 'Y'
+    
+    # Step 4: Converti le colonne in formato numerico in modo robusto
+    df[col_pioggia] = pd.to_numeric(df[col_pioggia], decimal=',', errors='coerce')
+    df[col_x] = pd.to_numeric(df[col_x], decimal=',', errors='coerce')
+    df[col_y] = pd.to_numeric(df[col_y], decimal=',', errors='coerce')
+
+    # Step 5: Rimuovi le righe dove mancano dati essenziali
+    df.dropna(subset=[col_pioggia, col_x, col_y], inplace=True)
+    
     return df
 
 try:
-    df = load_and_clean_data()
+    df = get_clean_dataframe()
 except Exception as e:
-    st.error(f"Errore durante il caricamento dei dati: {e}")
+    st.error(f"Errore critico durante la preparazione dei dati: {e}")
+    st.exception(e) # Mostra la traccia completa dell'errore
     st.stop()
 
-# Ora usiamo i nomi di colonna PULITI
+# --- DA QUI IL CODICE RESTA UGUALE, MA OPERA SU DATI GIÀ PULITI ---
+
+# Definiamo i nomi delle colonne per il popup
 COLS_TO_SHOW_NAMES = [
     'COMUNE', 'ALTITUDINE', 'LEGENDA', 'SBALZO TERMICO MIGLIORE', 
     'PIOGGE RESIDUA', 'Piogge entro 5 gg', 'Piogge entro 10 gg', 
     'Totale Piogge Mensili', 'MEDIA PORCINI CALDO BASE'
 ]
-COL_PIOGGIA = 'Piogge entro 5 gg' # Nome pulito, senza spazi
-
-# Conversione a numero usando il nome di colonna pulito
-df[COL_PIOGGIA] = pd.to_numeric(df[COL_PIOGGIA], decimal=',', errors='coerce')
-df['X'] = pd.to_numeric(df['X'], decimal=',', errors='coerce')
-df['Y'] = pd.to_numeric(df['Y'], decimal=',', errors='coerce')
-
-# Rimuove le righe con dati mancanti essenziali
-df.dropna(subset=[COL_PIOGGIA, 'X', 'Y'], inplace=True)
+COL_PIOGGIA = 'Piogge entro 5 gg' # Nome pulito, usato per la legenda e il filtro
 
 # --- 4. FILTRI NELLA SIDEBAR ---
 st.sidebar.title("Filtri e Opzioni")
@@ -83,7 +98,6 @@ else:
 # --- 5. LOGICA DEI COLORI E CREAZIONE MAPPA ---
 mappa = folium.Map(location=[43.5, 11.0], zoom_start=8)
 if not df_filtrato.empty:
-    # Usa il range del dataframe originale per una scala di colori consistente
     norm = colors.Normalize(vmin=df[COL_PIOGGIA].min(), vmax=df[COL_PIOGGIA].max())
     colormap = cm.get_cmap('Blues')
     def get_color_from_value(value):
@@ -91,7 +105,6 @@ if not df_filtrato.empty:
 
     for _, row in df_filtrato.iterrows():
         try:
-            # Le colonne sono già numeriche, non serve più pulizia qui
             lat = row['Y']
             lon = row['X']
             valore_pioggia = row[COL_PIOGGIA]
@@ -100,15 +113,7 @@ if not df_filtrato.empty:
             for col_name in COLS_TO_SHOW_NAMES:
                 if col_name in row and pd.notna(row[col_name]):
                     popup_html += f"<b>{col_name}</b>: {row[col_name]}<br>"
-            folium.CircleMarker(
-                location=[lat, lon],
-                radius=6,
-                color=colore,
-                fill=True,
-                fill_color=colore,
-                fill_opacity=0.9,
-                popup=folium.Popup(popup_html, max_width=350)
-            ).add_to(mappa)
+            folium.CircleMarker(location=[lat, lon], radius=6, color=colore, fill=True, fill_color=colore, fill_opacity=0.9, popup=folium.Popup(popup_html, max_width=350)).add_to(mappa)
         except (ValueError, TypeError, KeyError):
             continue
 else:
