@@ -33,19 +33,20 @@ SHEET_URL = (
 )
 
 @st.cache_data(ttl=3600)
-def load_data():
+def load_and_clean_data():
+    """Carica i dati e pulisce immediatamente i nomi delle colonne."""
     df = pd.read_csv(SHEET_URL, na_values=["#N/D", "#N/A"])
-    # --- PASSO FONDAMENTALE 1: Pulizia immediata dei nomi delle colonne ---
+    # Pulizia immediata dei nomi delle colonne da spazi extra
     df.columns = df.columns.str.strip()
     return df
 
 try:
-    df = load_data()
+    df = load_and_clean_data()
 except Exception as e:
     st.error(f"Errore durante il caricamento dei dati: {e}")
     st.stop()
 
-# --- PASSO FONDAMENTALE 2: Usiamo i nomi PULITI ---
+# Ora usiamo i nomi di colonna PULITI
 COLS_TO_SHOW_NAMES = [
     'COMUNE', 'ALTITUDINE', 'LEGENDA', 'SBALZO TERMICO MIGLIORE', 
     'PIOGGE RESIDUA', 'Piogge entro 5 gg', 'Piogge entro 10 gg', 
@@ -53,12 +54,12 @@ COLS_TO_SHOW_NAMES = [
 ]
 COL_PIOGGIA = 'Piogge entro 5 gg' # Nome pulito, senza spazi
 
-# Conversione a numero usando il nome pulito
+# Conversione a numero usando il nome di colonna pulito
 df[COL_PIOGGIA] = pd.to_numeric(df[COL_PIOGGIA], decimal=',', errors='coerce')
 df['X'] = pd.to_numeric(df['X'], decimal=',', errors='coerce')
 df['Y'] = pd.to_numeric(df['Y'], decimal=',', errors='coerce')
 
-# Rimuove righe con dati mancanti essenziali
+# Rimuove le righe con dati mancanti essenziali
 df.dropna(subset=[COL_PIOGGIA, 'X', 'Y'], inplace=True)
 
 # --- 4. FILTRI NELLA SIDEBAR ---
@@ -82,6 +83,7 @@ else:
 # --- 5. LOGICA DEI COLORI E CREAZIONE MAPPA ---
 mappa = folium.Map(location=[43.5, 11.0], zoom_start=8)
 if not df_filtrato.empty:
+    # Usa il range del dataframe originale per una scala di colori consistente
     norm = colors.Normalize(vmin=df[COL_PIOGGIA].min(), vmax=df[COL_PIOGGIA].max())
     colormap = cm.get_cmap('Blues')
     def get_color_from_value(value):
@@ -89,6 +91,7 @@ if not df_filtrato.empty:
 
     for _, row in df_filtrato.iterrows():
         try:
+            # Le colonne sono già numeriche, non serve più pulizia qui
             lat = row['Y']
             lon = row['X']
             valore_pioggia = row[COL_PIOGGIA]
