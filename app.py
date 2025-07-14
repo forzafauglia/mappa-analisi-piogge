@@ -46,7 +46,7 @@ except Exception as e:
 
 # --- MODIFICA CHIAVE: Lista delle colonne per il popup aggiornata alla tua ultima richiesta ---
 COLS_TO_SHOW_NAMES = [
-    'DESCRIZIONE', 'COMUNE', 'ALTITUDINE', 'UMIDITA MEDIA 77GG',
+    'DESCRIZIONE', 'COMUNE', 'ALTITUDINE', 'UMIDITA MEDIA 7GG',
     'TEMPERATURA MEDIANA', 'PIOGGE RESIDUA', 'Piogge entro 5 gg',
     'Piogge entro 10 gg', 'Totale Piogge Mensili'
 ]
