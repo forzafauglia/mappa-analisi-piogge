@@ -45,20 +45,19 @@ except Exception as e:
     st.error(f"Errore durante il caricamento dei dati: {e}")
     st.stop()
 
-# --- MODIFICA 1: Definiamo le colonne per nome ---
-# Colonne da mostrare nel popup (indici 2,3,4,9,12,13,14,15,16)
+# --- MODIFICA 1: Lista delle colonne corretta per il popup ---
+# Indici richiesti: 2, 3, 4, 9, 12, 13, 14, 15, 16
 COLS_TO_SHOW_NAMES = [
     'COMUNE', 'ALTITUDINE', 'LEGENDA', 'SBALZO TERMICO MIGLIORE',
     'PIOGGE RESIDUA', 'Piogge entro 5 gg', 'Piogge entro 10 gg',
     'Totale Piogge Mensili', 'MEDIA PORCINI CALDO BASE'
 ]
 # Colonna per il colore e il filtro (colonna 13 -> indice 12)
-COL_FILTRO = 'PIOGGE RESIDUA' 
+COL_FILTRO = 'PIOGGE RESIDUA'
 
 # Pulizia robusta delle colonne numeriche
-# Aggiungiamo anche la nuova colonna del filtro
-numeric_cols = [COL_FILTRO, 'X', 'Y']
-for col in numeric_cols:
+numeric_cols_to_clean = [COL_FILTRO, 'X', 'Y', 'Piogge entro 5 gg', 'Piogge entro 10 gg', 'Totale Piogge Mensili']
+for col in numeric_cols_to_clean:
     if col in df.columns:
         df[col] = df[col].astype(str).str.replace(',', '.', regex=False)
         df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -66,12 +65,11 @@ for col in numeric_cols:
 # Rimuove righe con dati mancanti essenziali
 df.dropna(subset=[COL_FILTRO, 'X', 'Y'], inplace=True)
 
-# --- 4. FILTRI NELLA SIDEBAR (usando la nuova colonna) ---
+# --- 4. FILTRI NELLA SIDEBAR ---
 st.sidebar.title("Filtri e Opzioni")
 if not df.empty:
     min_val = int(df[COL_FILTRO].min())
     max_val = int(df[COL_FILTRO].max())
-
     filtro_valore = st.sidebar.slider(
         f"Mostra stazioni con '{COL_FILTRO}' >= a:",
         min_value=min_val,
@@ -85,7 +83,7 @@ else:
     st.sidebar.warning("Nessun dato valido da filtrare.")
     df_filtrato = pd.DataFrame()
 
-# --- 5. LOGICA DEI COLORI E CREAZIONE MAPPA (usando la nuova colonna) ---
+# --- 5. LOGICA DEI COLORI E CREAZIONE MAPPA ---
 mappa = folium.Map(location=[43.5, 11.0], zoom_start=8)
 if not df_filtrato.empty:
     norm = colors.Normalize(vmin=df[COL_FILTRO].min(), vmax=df[COL_FILTRO].max())
@@ -97,14 +95,19 @@ if not df_filtrato.empty:
         try:
             lat = row['Y']
             lon = row['X']
-            
             valore_filtro = row[COL_FILTRO]
             colore = get_color_from_value(valore_filtro)
             
+            # --- MODIFICA 2: Il popup userà la lista corretta ---
             popup_html = f"<h4>{row.get('STAZIONE', 'N/A')}</h4><hr>"
             for col_name in COLS_TO_SHOW_NAMES:
                 if col_name in row and pd.notna(row[col_name]):
-                    popup_html += f"<b>{col_name}</b>: {row[col_name]}<br>"
+                    # Formattiamo i numeri per avere al massimo 2 decimali
+                    val = row[col_name]
+                    if isinstance(val, float):
+                        popup_html += f"<b>{col_name}</b>: {val:.2f}<br>"
+                    else:
+                        popup_html += f"<b>{col_name}</b>: {val}<br>"
 
             folium.CircleMarker(
                 location=[lat, lon],
