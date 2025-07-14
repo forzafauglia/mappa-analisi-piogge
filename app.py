@@ -51,21 +51,11 @@ COLS_TO_SHOW_NAMES = [
 ]
 COL_PIOGGIA = 'Piogge entro 5 gg'
 
-# --- SOLUZIONE DEFINITIVA PER DATI MISTI ---
-def pulisci_e_converti(valore):
-    if isinstance(valore, (int, float)):
-        return float(valore)
-    if isinstance(valore, str):
-        try:
-            return float(valore.replace(',', '.'))
-        except ValueError:
-            return None
-    return None
-
-df[COL_PIOGGIA] = df[COL_PIOGGIA].apply(pulisci_e_converti)
-df['X'] = df['X'].apply(pulisci_e_converti)
-df['Y'] = df['Y'].apply(pulisci_e_converti)
-# ---------------------------------------------
+# --- SOLUZIONE OTTIMIZZATA PANDAS ---
+df[COL_PIOGGIA] = pd.to_numeric(df[COL_PIOGGIA], decimal=',', errors='coerce')
+df['X'] = pd.to_numeric(df['X'], decimal=',', errors='coerce')
+df['Y'] = pd.to_numeric(df['Y'], decimal=',', errors='coerce')
+# ------------------------------------
 
 df.dropna(subset=[COL_PIOGGIA, 'X', 'Y'], inplace=True)
 
@@ -97,6 +87,7 @@ if not df_filtrato.empty:
 
     for _, row in df_filtrato.iterrows():
         try:
+            # Non serve più la pulizia qui, le colonne sono già numeriche
             lat = row['Y']
             lon = row['X']
             valore_pioggia = row[COL_PIOGGIA]
