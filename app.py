@@ -8,7 +8,6 @@ import matplotlib.colors as colors
 
 # --- 1. FUNZIONE PER GOOGLE ANALYTICS ---
 def inject_ga():
-    # ... (questa funzione rimane identica)
     GA_MEASUREMENT_ID = st.secrets.get("ga_measurement_id", "")
     if GA_MEASUREMENT_ID:
         GA_SCRIPT = f"""
@@ -45,18 +44,21 @@ except Exception as e:
     st.error(f"Errore durante il caricamento dei dati: {e}")
     st.stop()
 
-# --- MODIFICA 1: Lista delle colonne corretta per il popup ---
-# Indici richiesti: 2, 3, 4, 9, 12, 13, 14, 15, 16
+# --- MODIFICA CHIAVE: Lista delle colonne per il popup aggiornata alla tua ultima richiesta ---
 COLS_TO_SHOW_NAMES = [
-    'COMUNE', 'ALTITUDINE', 'LEGENDA', 'SBALZO TERMICO MIGLIORE',
-    'PIOGGE RESIDUA', 'Piogge entro 5 gg', 'Piogge entro 10 gg',
-    'Totale Piogge Mensili', 'MEDIA PORCINI CALDO BASE'
+    'DESCRIZIONE', 'COMUNE', 'ALTITUDINE', 'UMIDITA MEDIA 77GG',
+    'TEMPERATURA MEDIANA', 'PIOGGE RESIDUA', 'Piogge entro 5 gg',
+    'Piogge entro 10 gg', 'Totale Piogge Mensili'
 ]
-# Colonna per il colore e il filtro (colonna 13 -> indice 12)
+# La colonna per il filtro e il colore rimane 'PIOGGE RESIDUA'
 COL_FILTRO = 'PIOGGE RESIDUA'
 
-# Pulizia robusta delle colonne numeriche
-numeric_cols_to_clean = [COL_FILTRO, 'X', 'Y', 'Piogge entro 5 gg', 'Piogge entro 10 gg', 'Totale Piogge Mensili']
+# Pulizia robusta di tutte le colonne numeriche che useremo
+# Aggiungiamo tutte le colonne che devono essere trattate come numeri
+numeric_cols_to_clean = [
+    COL_FILTRO, 'X', 'Y', 'Piogge entro 5 gg', 'Piogge entro 10 gg',
+    'Totale Piogge Mensili', 'UMIDITA MEDIA 77GG', 'TEMPERATURA MEDIANA', 'ALTITUDINE'
+]
 for col in numeric_cols_to_clean:
     if col in df.columns:
         df[col] = df[col].astype(str).str.replace(',', '.', regex=False)
@@ -98,12 +100,12 @@ if not df_filtrato.empty:
             valore_filtro = row[COL_FILTRO]
             colore = get_color_from_value(valore_filtro)
             
-            # --- MODIFICA 2: Il popup userà la lista corretta ---
+            # Il popup ora userà la nuova lista COLS_TO_SHOW_NAMES
             popup_html = f"<h4>{row.get('STAZIONE', 'N/A')}</h4><hr>"
             for col_name in COLS_TO_SHOW_NAMES:
                 if col_name in row and pd.notna(row[col_name]):
-                    # Formattiamo i numeri per avere al massimo 2 decimali
                     val = row[col_name]
+                    # Formattazione per rendere i numeri più leggibili
                     if isinstance(val, float):
                         popup_html += f"<b>{col_name}</b>: {val:.2f}<br>"
                     else:
