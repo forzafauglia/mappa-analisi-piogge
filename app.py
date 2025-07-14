@@ -44,7 +44,7 @@ def load_data():
 
 df = load_data()
 
-# Identifichiamo le colonne per nome (più robusto che per indice)
+# Identifichiamo le colonne per nome (piÃ¹ robusto che per indice)
 # Indici Python: 2, 3, 4, 9, 12, 13, 14, 15, 16
 # Corrispondono a:
 COLS_TO_SHOW_NAMES = [
@@ -122,12 +122,12 @@ else:
     st.warning("Nessuna stazione corrisponde ai filtri selezionati.")
 
 # Aggiunta di una legenda per i colori
-# (Questa è una legenda semplificata, si può rendere più complessa)
+# (Questa Ã¨ una legenda semplificata, si puÃ² rendere piÃ¹ complessa)
 st.markdown(f"""
 <div style="position: fixed; bottom: 20px; left: 20px; z-index:1000; background-color: white; padding: 10px; border-radius: 5px; border: 1px solid grey;">
     <b>Legenda: {COL_PIOGGIA}</b><br>
-    <i style="background: {get_color_from_value(min_pioggia)};">       </i> Min ({min_pioggia})<br>
-    <i style="background: {get_color_from_value(max_pioggia)};">       </i> Max ({max_pioggia})
+    <i style="background: {get_color_from_value(min_pioggia)};"> Â  Â  Â  </i> Min ({min_pioggia})<br>
+    <i style="background: {get_color_from_value(max_pioggia)};"> Â  Â  Â  </i> Max ({max_pioggia})
 </div>
 """, unsafe_allow_html=True)
 
