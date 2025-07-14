@@ -33,35 +33,18 @@ SHEET_URL = (
 )
 
 @st.cache_data(ttl=3600)
-def get_clean_dataframe():
-    """
-    Questa funzione esegue tutte le operazioni di caricamento e pulizia in un unico blocco.
-    Restituisce un DataFrame garantito per essere pulito.
-    """
+def load_and_clean_data():
     df = pd.read_csv(SHEET_URL, na_values=["#N/D", "#N/A"])
     df.columns = df.columns.str.strip()
-    
-    col_pioggia = 'Piogge entro 5 gg'
-    col_x = 'X'
-    col_y = 'Y'
-    
-    # Questa parte funzionerà non appena la versione di pandas sarà corretta
-    df[col_pioggia] = pd.to_numeric(df[col_pioggia], decimal=',', errors='coerce')
-    df[col_x] = pd.to_numeric(df[col_x], decimal=',', errors='coerce')
-    df[col_y] = pd.to_numeric(df[col_y], decimal=',', errors='coerce')
-
-    df.dropna(subset=[col_pioggia, col_x, col_y], inplace=True)
-    
     return df
 
 try:
-    df = get_clean_dataframe()
+    df = load_and_clean_data()
 except Exception as e:
-    st.error(f"Errore critico durante la preparazione dei dati: {e}")
-    st.exception(e)
+    st.error(f"Errore durante il caricamento dei dati: {e}")
     st.stop()
 
-# --- DA QUI IL CODICE RESTA UGUALE ---
+# Definiamo i nomi delle colonne
 COLS_TO_SHOW_NAMES = [
     'COMUNE', 'ALTITUDINE', 'LEGENDA', 'SBALZO TERMICO MIGLIORE', 
     'PIOGGE RESIDUA', 'Piogge entro 5 gg', 'Piogge entro 10 gg', 
@@ -69,7 +52,28 @@ COLS_TO_SHOW_NAMES = [
 ]
 COL_PIOGGIA = 'Piogge entro 5 gg'
 
+# --- SOLUZIONE ROBUSTA "MANUALE" ---
+# Step 1: Assicura che le colonne siano di tipo stringa
+df[COL_PIOGGIA] = df[COL_PIOGGIA].astype(str)
+df['X'] = df['X'].astype(str)
+df['Y'] = df['Y'].astype(str)
+
+# Step 2: Sostituisci la virgola con il punto
+df[COL_PIOGGIA] = df[COL_PIOGGIA].str.replace(',', '.', regex=False)
+df['X'] = df['X'].str.replace(',', '.', regex=False)
+df['Y'] = df['Y'].str.replace(',', '.', regex=False)
+
+# Step 3: Ora converti in numero
+df[COL_PIOGGIA] = pd.to_numeric(df[COL_PIOGGIA], errors='coerce')
+df['X'] = pd.to_numeric(df['X'], errors='coerce')
+df['Y'] = pd.to_numeric(df['Y'], errors='coerce')
+# ------------------------------------
+
+# Rimuove le righe con dati mancanti essenziali
+df.dropna(subset=[COL_PIOGGIA, 'X', 'Y'], inplace=True)
+
 # --- 4. FILTRI NELLA SIDEBAR ---
+# ... (Il resto del codice rimane identico e corretto) ...
 st.sidebar.title("Filtri e Opzioni")
 if not df.empty:
     min_pioggia = int(df[COL_PIOGGIA].min())
@@ -105,7 +109,15 @@ if not df_filtrato.empty:
             for col_name in COLS_TO_SHOW_NAMES:
                 if col_name in row and pd.notna(row[col_name]):
                     popup_html += f"<b>{col_name}</b>: {row[col_name]}<br>"
-            folium.CircleMarker(location=[lat, lon], radius=6, color=colore, fill=True, fill_color=colore, fill_opacity=0.9, popup=folium.Popup(popup_html, max_width=350)).add_to(mappa)
+            folium.CircleMarker(
+                location=[lat, lon],
+                radius=6,
+                color=colore,
+                fill=True,
+                fill_color=colore,
+                fill_opacity=0.9,
+                popup=folium.Popup(popup_html, max_width=350)
+            ).add_to(mappa)
         except (ValueError, TypeError, KeyError):
             continue
 else:
