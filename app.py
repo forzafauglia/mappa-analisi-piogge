@@ -5,9 +5,11 @@ from streamlit_folium import folium_static
 import streamlit.components.v1 as components
 import matplotlib.cm as cm
 import matplotlib.colors as colors
+import io # Necessario per catturare l'output di df.info()
 
 # --- 1. FUNZIONE PER GOOGLE ANALYTICS ---
 def inject_ga():
+    # ... (questa funzione rimane identica)
     GA_MEASUREMENT_ID = st.secrets.get("ga_measurement_id", "")
     if GA_MEASUREMENT_ID:
         GA_SCRIPT = f"""
@@ -34,7 +36,9 @@ SHEET_URL = (
 
 @st.cache_data(ttl=3600)
 def load_data():
-    df = pd.read_csv(SHEET_URL, na_values=["#N/D", "#N/A"])
+    # --- MODIFICA CHIAVE: Forziamo la lettura della prima riga come header ---
+    df = pd.read_csv(SHEET_URL, header=0, na_values=["#N/D", "#N/A"])
+    # ----------------------------------------------------------------------
     df.columns = df.columns.str.strip()
     return df
 
@@ -44,6 +48,18 @@ except Exception as e:
     st.error(f"Errore durante il caricamento dei dati: {e}")
     st.stop()
 
+# --- BLOCCO DI DEBUG (DA RIMUOVERE UNA VOLTA RISOLTO) ---
+st.subheader("🕵️ Dati di Debug sul DataFrame Caricato 🕵️")
+st.write("Prime 5 righe del DataFrame:")
+st.dataframe(df.head())
+
+st.write("Informazioni dettagliate sul DataFrame (`df.info()`):")
+buffer = io.StringIO()
+df.info(buf=buffer)
+s = buffer.getvalue()
+st.code(s)
+# ---------------------------------------------------------
+
 COLS_TO_SHOW_NAMES = [
     'COMUNE', 'ALTITUDINE', 'LEGENDA', 'SBALZO TERMICO MIGLIORE', 
     'PIOGGE RESIDUA', 'Piogge entro 5 gg', 'Piogge entro 10 gg', 
@@ -51,14 +67,13 @@ COLS_TO_SHOW_NAMES = [
 ]
 COL_PIOGGIA = 'Piogge entro 5 gg'
 
-# --- SOLUZIONE OTTIMIZZATA PANDAS ---
 df[COL_PIOGGIA] = pd.to_numeric(df[COL_PIOGGIA], decimal=',', errors='coerce')
 df['X'] = pd.to_numeric(df['X'], decimal=',', errors='coerce')
 df['Y'] = pd.to_numeric(df['Y'], decimal=',', errors='coerce')
-# ------------------------------------
 
 df.dropna(subset=[COL_PIOGGIA, 'X', 'Y'], inplace=True)
 
+# ... il resto del codice rimane identico ...
 # --- 4. FILTRI NELLA SIDEBAR ---
 st.sidebar.title("Filtri e Opzioni")
 if not df.empty:
@@ -87,7 +102,6 @@ if not df_filtrato.empty:
 
     for _, row in df_filtrato.iterrows():
         try:
-            # Non serve più la pulizia qui, le colonne sono già numeriche
             lat = row['Y']
             lon = row['X']
             valore_pioggia = row[COL_PIOGGIA]
