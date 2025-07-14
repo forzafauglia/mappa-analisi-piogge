@@ -8,6 +8,7 @@ import matplotlib.colors as colors
 
 # --- 1. FUNZIONE PER GOOGLE ANALYTICS ---
 def inject_ga():
+    # ... (questa funzione rimane identica)
     GA_MEASUREMENT_ID = st.secrets.get("ga_measurement_id", "")
     if GA_MEASUREMENT_ID:
         GA_SCRIPT = f"""
@@ -44,57 +45,50 @@ except Exception as e:
     st.error(f"Errore durante il caricamento dei dati: {e}")
     st.stop()
 
-# Definiamo i nomi delle colonne
+# --- MODIFICA 1: Definiamo le colonne per nome ---
+# Colonne da mostrare nel popup (indici 2,3,4,9,12,13,14,15,16)
 COLS_TO_SHOW_NAMES = [
-    'COMUNE', 'ALTITUDINE', 'LEGENDA', 'SBALZO TERMICO MIGLIORE', 
-    'PIOGGE RESIDUA', 'Piogge entro 5 gg', 'Piogge entro 10 gg', 
+    'COMUNE', 'ALTITUDINE', 'LEGENDA', 'SBALZO TERMICO MIGLIORE',
+    'PIOGGE RESIDUA', 'Piogge entro 5 gg', 'Piogge entro 10 gg',
     'Totale Piogge Mensili', 'MEDIA PORCINI CALDO BASE'
 ]
-COL_PIOGGIA = 'Piogge entro 5 gg'
+# Colonna per il colore e il filtro (colonna 13 -> indice 12)
+COL_FILTRO = 'PIOGGE RESIDUA' 
 
-# --- SOLUZIONE ROBUSTA "MANUALE" ---
-# Step 1: Assicura che le colonne siano di tipo stringa
-df[COL_PIOGGIA] = df[COL_PIOGGIA].astype(str)
-df['X'] = df['X'].astype(str)
-df['Y'] = df['Y'].astype(str)
+# Pulizia robusta delle colonne numeriche
+# Aggiungiamo anche la nuova colonna del filtro
+numeric_cols = [COL_FILTRO, 'X', 'Y']
+for col in numeric_cols:
+    if col in df.columns:
+        df[col] = df[col].astype(str).str.replace(',', '.', regex=False)
+        df[col] = pd.to_numeric(df[col], errors='coerce')
 
-# Step 2: Sostituisci la virgola con il punto
-df[COL_PIOGGIA] = df[COL_PIOGGIA].str.replace(',', '.', regex=False)
-df['X'] = df['X'].str.replace(',', '.', regex=False)
-df['Y'] = df['Y'].str.replace(',', '.', regex=False)
+# Rimuove righe con dati mancanti essenziali
+df.dropna(subset=[COL_FILTRO, 'X', 'Y'], inplace=True)
 
-# Step 3: Ora converti in numero
-df[COL_PIOGGIA] = pd.to_numeric(df[COL_PIOGGIA], errors='coerce')
-df['X'] = pd.to_numeric(df['X'], errors='coerce')
-df['Y'] = pd.to_numeric(df['Y'], errors='coerce')
-# ------------------------------------
-
-# Rimuove le righe con dati mancanti essenziali
-df.dropna(subset=[COL_PIOGGIA, 'X', 'Y'], inplace=True)
-
-# --- 4. FILTRI NELLA SIDEBAR ---
-# ... (Il resto del codice rimane identico e corretto) ...
+# --- 4. FILTRI NELLA SIDEBAR (usando la nuova colonna) ---
 st.sidebar.title("Filtri e Opzioni")
 if not df.empty:
-    min_pioggia = int(df[COL_PIOGGIA].min())
-    max_pioggia = int(df[COL_PIOGGIA].max())
-    filtro_pioggia = st.sidebar.slider(
-        f"Mostra stazioni con '{COL_PIOGGIA}' >= a:",
-        min_value=min_pioggia,
-        max_value=max_pioggia,
-        value=min_pioggia,
+    min_val = int(df[COL_FILTRO].min())
+    max_val = int(df[COL_FILTRO].max())
+
+    filtro_valore = st.sidebar.slider(
+        f"Mostra stazioni con '{COL_FILTRO}' >= a:",
+        min_value=min_val,
+        max_value=max_val,
+        value=min_val,
         step=1
     )
-    df_filtrato = df[df[COL_PIOGGIA] >= filtro_pioggia].copy()
+    df_filtrato = df[df[COL_FILTRO] >= filtro_valore].copy()
     st.sidebar.info(f"Mostrate **{len(df_filtrato)}** stazioni su **{len(df)}** totali.")
 else:
     st.sidebar.warning("Nessun dato valido da filtrare.")
     df_filtrato = pd.DataFrame()
 
-# --- 5. LOGICA DEI COLORI E CREAZIONE MAPPA ---
+# --- 5. LOGICA DEI COLORI E CREAZIONE MAPPA (usando la nuova colonna) ---
 mappa = folium.Map(location=[43.5, 11.0], zoom_start=8)
 if not df_filtrato.empty:
-    norm = colors.Normalize(vmin=df[COL_PIOGGIA].min(), vmax=df[COL_PIOGGIA].max())
+    norm = colors.Normalize(vmin=df[COL_FILTRO].min(), vmax=df[COL_FILTRO].max())
     colormap = cm.get_cmap('Blues')
     def get_color_from_value(value):
         return colors.to_hex(colormap(norm(value)))
@@ -103,12 +97,15 @@ if not df_filtrato.empty:
         try:
             lat = row['Y']
             lon = row['X']
-            valore_pioggia = row[COL_PIOGGIA]
-            colore = get_color_from_value(valore_pioggia)
+            
+            valore_filtro = row[COL_FILTRO]
+            colore = get_color_from_value(valore_filtro)
+            
             popup_html = f"<h4>{row.get('STAZIONE', 'N/A')}</h4><hr>"
             for col_name in COLS_TO_SHOW_NAMES:
                 if col_name in row and pd.notna(row[col_name]):
                     popup_html += f"<b>{col_name}</b>: {row[col_name]}<br>"
+
             folium.CircleMarker(
                 location=[lat, lon],
                 radius=6,
@@ -124,13 +121,13 @@ else:
     st.warning("Nessuna stazione corrisponde ai filtri selezionati.")
 
 if not df.empty:
-    min_val_legenda = df[COL_PIOGGIA].min()
-    max_val_legenda = df[COL_PIOGGIA].max()
+    min_val_legenda = df[COL_FILTRO].min()
+    max_val_legenda = df[COL_FILTRO].max()
     norm_legenda = colors.Normalize(vmin=min_val_legenda, vmax=max_val_legenda)
     colormap_legenda = cm.get_cmap('Blues')
     legenda_html = f"""
     <div style="position: fixed; bottom: 20px; left: 20px; z-index:1000; background-color: rgba(255, 255, 255, 0.8); padding: 10px; border-radius: 5px; border: 1px solid grey; font-family: sans-serif; font-size: 14px;">
-        <b>Legenda: {COL_PIOGGIA}</b><br>
+        <b>Legenda: {COL_FILTRO}</b><br>
         <i style="background: {colors.to_hex(colormap_legenda(norm_legenda(min_val_legenda)))}; border: 1px solid #ccc;">       </i> Min ({min_val_legenda:.1f})<br>
         <i style="background: {colors.to_hex(colormap_legenda(norm_legenda(max_val_legenda)))}; border: 1px solid #ccc;">       </i> Max ({max_val_legenda:.1f})
     </div>
