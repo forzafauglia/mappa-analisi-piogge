@@ -8,7 +8,6 @@ import matplotlib.colors as colors
 
 # --- 1. FUNZIONE PER GOOGLE ANALYTICS ---
 def inject_ga():
-    # ... (questa funzione rimane identica)
     GA_MEASUREMENT_ID = st.secrets.get("ga_measurement_id", "")
     if GA_MEASUREMENT_ID:
         GA_SCRIPT = f"""
@@ -27,7 +26,7 @@ st.set_page_config(page_title="Analisi Piogge", layout="wide")
 inject_ga()
 st.title("💧 Analisi Precipitazioni – by Bobo56043 💧")
 
-# --- 3. CARICAMENTO E PREPARAZIONE DATI (NUOVA VERSIONE ATOMICA) ---
+# --- 3. CARICAMENTO E PREPARAZIONE DATI ---
 SHEET_URL = (
     "https://docs.google.com/spreadsheets/"
     "d/1G4cJPBAYdb8Xv-mHNX3zmVhsz6FqWf_zE14mBXcs5_A/gviz/tq?tqx=out:csv"
@@ -39,23 +38,18 @@ def get_clean_dataframe():
     Questa funzione esegue tutte le operazioni di caricamento e pulizia in un unico blocco.
     Restituisce un DataFrame garantito per essere pulito.
     """
-    # Step 1: Carica i dati
     df = pd.read_csv(SHEET_URL, na_values=["#N/D", "#N/A"])
-
-    # Step 2: Pulisci i nomi delle colonne da spazi extra
     df.columns = df.columns.str.strip()
-
-    # Step 3: Definisci i nomi delle colonne PULITE che useremo
+    
     col_pioggia = 'Piogge entro 5 gg'
     col_x = 'X'
     col_y = 'Y'
     
-    # Step 4: Converti le colonne in formato numerico in modo robusto
+    # Questa parte funzionerà non appena la versione di pandas sarà corretta
     df[col_pioggia] = pd.to_numeric(df[col_pioggia], decimal=',', errors='coerce')
     df[col_x] = pd.to_numeric(df[col_x], decimal=',', errors='coerce')
     df[col_y] = pd.to_numeric(df[col_y], decimal=',', errors='coerce')
 
-    # Step 5: Rimuovi le righe dove mancano dati essenziali
     df.dropna(subset=[col_pioggia, col_x, col_y], inplace=True)
     
     return df
@@ -64,18 +58,16 @@ try:
     df = get_clean_dataframe()
 except Exception as e:
     st.error(f"Errore critico durante la preparazione dei dati: {e}")
-    st.exception(e) # Mostra la traccia completa dell'errore
+    st.exception(e)
     st.stop()
 
-# --- DA QUI IL CODICE RESTA UGUALE, MA OPERA SU DATI GIÀ PULITI ---
-
-# Definiamo i nomi delle colonne per il popup
+# --- DA QUI IL CODICE RESTA UGUALE ---
 COLS_TO_SHOW_NAMES = [
     'COMUNE', 'ALTITUDINE', 'LEGENDA', 'SBALZO TERMICO MIGLIORE', 
     'PIOGGE RESIDUA', 'Piogge entro 5 gg', 'Piogge entro 10 gg', 
     'Totale Piogge Mensili', 'MEDIA PORCINI CALDO BASE'
 ]
-COL_PIOGGIA = 'Piogge entro 5 gg' # Nome pulito, usato per la legenda e il filtro
+COL_PIOGGIA = 'Piogge entro 5 gg'
 
 # --- 4. FILTRI NELLA SIDEBAR ---
 st.sidebar.title("Filtri e Opzioni")
