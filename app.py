@@ -51,18 +51,22 @@ COLS_TO_SHOW_NAMES = [
 ]
 COL_PIOGGIA = 'Piogge entro 5 gg'
 
-# --- SOLUZIONE SEMPLIFICATA E PIÙ ROBUSTA ---
-# Converte la colonna in numeri, trattando la virgola come separatore decimale.
-# 'coerce' trasforma gli errori di conversione in valori nulli (NaN).
-# Questa singola riga sostituisce la funzione personalizzata.
-df[COL_PIOGGIA] = pd.to_numeric(df[COL_PIOGGIA], errors='coerce', decimal=',')
+# --- SOLUZIONE DEFINITIVA PER DATI MISTI ---
+def pulisci_e_converti(valore):
+    if isinstance(valore, (int, float)):
+        return float(valore)
+    if isinstance(valore, str):
+        try:
+            return float(valore.replace(',', '.'))
+        except ValueError:
+            return None
+    return None
 
-# Converte anche le colonne X e Y in modo robusto
-df['X'] = pd.to_numeric(df['X'], errors='coerce', decimal=',')
-df['Y'] = pd.to_numeric(df['Y'], errors='coerce', decimal=',')
-# -----------------------------------------------
+df[COL_PIOGGIA] = df[COL_PIOGGIA].apply(pulisci_e_converti)
+df['X'] = df['X'].apply(pulisci_e_converti)
+df['Y'] = df['Y'].apply(pulisci_e_converti)
+# ---------------------------------------------
 
-# Rimuove righe con dati mancanti essenziali per la visualizzazione
 df.dropna(subset=[COL_PIOGGIA, 'X', 'Y'], inplace=True)
 
 # --- 4. FILTRI NELLA SIDEBAR ---
@@ -93,10 +97,8 @@ if not df_filtrato.empty:
 
     for _, row in df_filtrato.iterrows():
         try:
-            # Non serve più la pulizia qui, le colonne sono già numeriche
             lat = row['Y']
             lon = row['X']
-            
             valore_pioggia = row[COL_PIOGGIA]
             colore = get_color_from_value(valore_pioggia)
             popup_html = f"<h4>{row.get('STAZIONE', 'N/A')}</h4><hr>"
@@ -112,7 +114,7 @@ if not df_filtrato.empty:
                 fill_opacity=0.9,
                 popup=folium.Popup(popup_html, max_width=350)
             ).add_to(mappa)
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, KeyError):
             continue
 else:
     st.warning("Nessuna stazione corrisponde ai filtri selezionati.")
