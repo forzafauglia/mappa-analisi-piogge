@@ -11,6 +11,7 @@ from plotly.subplots import make_subplots
 
 
 # --- 1. CONFIGURAZIONE CENTRALE ---
+class Config:
     SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRxitMYpUqvX6bxVaukG01lJDC8SUfXtr47Zv5ekR1IzfR1jmhUilBsxZPJ8hrktVHrBh6hUUWYUtox/pub?output=csv"
     
     # Mappatura dei nomi originali delle colonne con nomi "puliti" per il codice
@@ -70,6 +71,7 @@ def load_and_prepare_data(url: str) -> pd.DataFrame | None:
         return None
 
 # --- 3. SEZIONI DELL'INTERFACCIA (UI) ---
+
 
 def ui_sidebar(df):
     """Crea la sidebar e restituisce tutte le selezioni dell'utente."""
@@ -286,5 +288,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
