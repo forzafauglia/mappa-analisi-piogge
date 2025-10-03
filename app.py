@@ -8,6 +8,7 @@ import matplotlib.colors as colors
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import re
 
 
 # --- 1. CONFIGURAZIONE CENTRALE ---
@@ -39,9 +40,16 @@ def clean_col_names(df):
     cols = cols.str.replace(' ', '_', regex=False) # Sostituisce spazi con _
     cols = cols.str.replace('[^A-Za-z0-9_]+', '', regex=True) # Rimuove caratteri speciali
     df.columns = cols
+    
     # Rinomina in base alla mappatura per coerenza
     for original, new in Config.COLUMN_MAP.items():
-        clean_original = original.strip().replace(r'\[.*\]', '', regex=True).replace(' ', '_', regex=False).replace('[^A-Za-z0-9_]+', '', regex=True)
+        # --- QUESTA È LA LOGICA CORRETTA ---
+        temp_name = original.strip()
+        temp_name = re.sub(r'\[.*\]', '', temp_name)
+        temp_name = temp_name.replace(' ', '_')
+        clean_original = re.sub('[^A-Za-z0-9_]+', '', temp_name)
+        # --- FINE DELLA CORREZIONE ---
+        
         if clean_original in df.columns:
             df.rename(columns={clean_original: new}, inplace=True)
     return df
@@ -288,6 +296,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
