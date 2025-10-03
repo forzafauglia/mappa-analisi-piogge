@@ -11,8 +11,7 @@ from plotly.subplots import make_subplots
 
 
 # --- 1. CONFIGURAZIONE CENTRALE ---
-class Config:
-    SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT2qK9kE_Cj-LdD3gYqJ7pM8b-p9B_H9-R_aL_F_gE4yT_hN-sX6wJ_cE7fP8uR-A-yTzR/pub?gid=0&single=true&output=csv"
+    SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRxitMYpUqvX6bxVaukG01lJDC8SUfXtr47Zv5ekR1IzfR1jmhUilBsxZPJ8hrktVHrBh6hUUWYUtox/pub?output=csv"
     
     # Mappatura dei nomi originali delle colonne con nomi "puliti" per il codice
     COLUMN_MAP = {
@@ -287,4 +286,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
