@@ -17,8 +17,8 @@ class Config:
     
     # Mappatura dei nomi originali delle colonne con nomi "puliti" per il codice
     COLUMN_MAP = {
-        'Latitudine': 'lat',
-        'Longitudine': 'lon',
+        'Latitudine': 'lon',
+        'Longitudine': 'lat',
         'Stazione': 'stazione',
         'Provincia': 'provincia',
         'Data': 'data',
@@ -309,6 +309,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
