@@ -68,10 +68,15 @@ def load_and_prepare_data(url: str) -> pd.DataFrame | None:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors='coerce', dayfirst=True)
 
-        # Conversione numerica robusta
+        # --- INIZIO BLOCCO CORRETTO ---
+        # Conversione numerica robusta (versione ultra-compatibile)
         for col in df.select_dtypes(include=['object']).columns:
              if col not in ['stazione', 'provincia', 'ultimo_aggiornamento']:
-                df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '.', regex=False), errors='coerce')
+                # Usiamo il metodo .apply con una funzione lambda per la massima compatibilità.
+                # Questo applica la sostituzione standard di Python (che non ha 'regex') a ogni cella.
+                df[col] = df[col].astype(str).apply(lambda x: x.replace(',', '.'))
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        # --- FINE BLOCCO CORRETTO ---
 
         df.dropna(subset=['lat', 'lon', 'data'], inplace=True)
         return df
@@ -297,6 +302,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
