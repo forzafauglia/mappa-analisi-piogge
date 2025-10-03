@@ -5,138 +5,267 @@ from streamlit_folium import folium_static
 import streamlit.components.v1 as components
 import matplotlib.cm as cm
 import matplotlib.colors as colors
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
-# --- 1. FUNZIONE PER GOOGLE ANALYTICS ---
-def inject_ga():
-    GA_MEASUREMENT_ID = st.secrets.get("ga_measurement_id", "")
-    if GA_MEASUREMENT_ID:
-        GA_SCRIPT = f"""
-            <script async src="https://www.googletagmanager.com/gtag/js?id={GA_MEASUREMENT_ID}"></script>
-            <script>
-              window.dataLayer = window.dataLayer || [];
-              function gtag(){{dataLayer.push(arguments);}}
-              gtag('js', new Date());
-              gtag('config', '{GA_MEASUREMENT_ID}');
-            </script>
-        """
-        components.html(GA_SCRIPT, height=0)
 
-# --- 2. CONFIGURAZIONE E TITOLO ---
-st.set_page_config(page_title="Analisi Piogge", layout="wide")
-inject_ga()
-st.title("💧 Analisi Precipitazioni – by Bobo56043 💧")
+# --- 1. CONFIGURAZIONE CENTRALE ---
+class Config:
+    SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT2qK9kE_Cj-LdD3gYqJ7pM8b-p9B_H9-R_aL_F_gE4yT_hN-sX6wJ_cE7fP8uR-A-yTzR/pub?gid=0&single=true&output=csv"
+    
+    # Mappatura dei nomi originali delle colonne con nomi "puliti" per il codice
+    COLUMN_MAP = {
+        'Latitudine': 'lat',
+        'Longitudine': 'lon',
+        'Stazione': 'stazione',
+        'Provincia': 'provincia',
+        'Data': 'data',
+        'ULTIMO_AGGIORNAMENTO_SHEET': 'ultimo_aggiornamento'
+    }
+    
+    # Colonne da trattare come date
+    DATE_COLS = ['data']
+    
+    # Colonna essenziale per i colori della mappa (default)
+    DEFAULT_COLOR_METRIC = 'Piogge Residua Zoffoli'
 
-# --- 3. CARICAMENTO E PREPARAZIONE DATI ---
-SHEET_URL = (
-    "https://docs.google.com/spreadsheets/"
-    "d/1G4cJPBAYdb8Xv-mHNX3zmVhsz6FqWf_zE14mBXcs5_A/gviz/tq?tqx=out:csv"
-)
+# --- 2. FUNZIONI DI CARICAMENTO E PREPARAZIONE DATI ---
 
-@st.cache_data(ttl=3600)
-def load_and_clean_data():
-    df = pd.read_csv(SHEET_URL, na_values=["#N/D", "#N/A"])
-    df.columns = df.columns.str.strip()
+def clean_col_names(df):
+    """Pulisce i nomi delle colonne per renderli utilizzabili in Python."""
+    cols = df.columns.str.strip() # Rimuove spazi
+    cols = cols.str.replace(r'\[.*\]', '', regex=True) # Rimuove [..]
+    cols = cols.str.replace(' ', '_', regex=False) # Sostituisce spazi con _
+    cols = cols.str.replace('[^A-Za-z0-9_]+', '', regex=True) # Rimuove caratteri speciali
+    df.columns = cols
+    # Rinomina in base alla mappatura per coerenza
+    for original, new in Config.COLUMN_MAP.items():
+        clean_original = original.strip().replace(r'\[.*\]', '', regex=True).replace(' ', '_', regex=False).replace('[^A-Za-z0-9_]+', '', regex=True)
+        if clean_original in df.columns:
+            df.rename(columns={clean_original: new}, inplace=True)
     return df
 
-try:
-    df = load_and_clean_data()
-except Exception as e:
-    st.error(f"Errore durante il caricamento dei dati: {e}")
-    st.stop()
 
-# --- MODIFICA CHIAVE: Lista delle colonne per il popup aggiornata alla tua ultima richiesta ---
-COLS_TO_SHOW_NAMES = [
-    'DESCRIZIONE', 'COMUNE', 'ALTITUDINE', 'UMIDITA MEDIA 7GG',
-    'TEMPERATURA MEDIANA', 'PIOGGE RESIDUA', 'Piogge entro 5 gg',
-    'Piogge entro 10 gg', 'Totale Piogge Mensili'
-]
-# La colonna per il filtro e il colore rimane 'PIOGGE RESIDUA'
-COL_FILTRO = 'PIOGGE RESIDUA'
+@st.cache_data(ttl=3600)
+def load_and_prepare_data(url: str) -> pd.DataFrame | None:
+    """Carica, pulisce e prepara i dati per l'analisi."""
+    try:
+        df = pd.read_csv(url, na_values=["#N/D", "#N/A"])
+        df = clean_col_names(df)
 
-# Pulizia robusta di tutte le colonne numeriche che useremo
-# Aggiungiamo tutte le colonne che devono essere trattate come numeri
-numeric_cols_to_clean = [
-    COL_FILTRO, 'X', 'Y', 'Piogge entro 5 gg', 'Piogge entro 10 gg',
-    'Totale Piogge Mensili', 'UMIDITA MEDIA 77GG', 'TEMPERATURA MEDIANA', 'ALTITUDINE'
-]
-for col in numeric_cols_to_clean:
-    if col in df.columns:
-        df[col] = df[col].astype(str).str.replace(',', '.', regex=False)
-        df[col] = pd.to_numeric(df[col], errors='coerce')
+        # Gestione date
+        for col in Config.DATE_COLS:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors='coerce', dayfirst=True)
 
-# Rimuove righe con dati mancanti essenziali
-df.dropna(subset=[COL_FILTRO, 'X', 'Y'], inplace=True)
+        # Conversione numerica robusta
+        for col in df.select_dtypes(include=['object']).columns:
+             if col not in ['stazione', 'provincia', 'ultimo_aggiornamento']:
+                df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '.', regex=False), errors='coerce')
 
-# --- 4. FILTRI NELLA SIDEBAR ---
-st.sidebar.title("Filtri e Opzioni")
-if not df.empty:
-    min_val = int(df[COL_FILTRO].min())
-    max_val = int(df[COL_FILTRO].max())
-    filtro_valore = st.sidebar.slider(
-        f"Mostra stazioni con '{COL_FILTRO}' >= a:",
-        min_value=min_val,
-        max_value=max_val,
-        value=min_val,
-        step=1
+        df.dropna(subset=['lat', 'lon', 'data'], inplace=True)
+        return df
+    except Exception as e:
+        st.error(f"Errore critico durante il caricamento dei dati: {e}")
+        return None
+
+# --- 3. SEZIONI DELL'INTERFACCIA (UI) ---
+
+def ui_sidebar(df):
+    """Crea la sidebar e restituisce tutte le selezioni dell'utente."""
+    st.sidebar.title("🔍 Pannello di Controllo")
+    
+    mode = st.sidebar.radio(
+        "Seleziona modalità di analisi:",
+        ("Analisi per Periodo", "Storico Singola Stazione"),
+        key="analysis_mode"
     )
-    df_filtrato = df[df[COL_FILTRO] >= filtro_valore].copy()
-    st.sidebar.info(f"Mostrate **{len(df_filtrato)}** stazioni su **{len(df)}** totali.")
-else:
-    st.sidebar.warning("Nessun dato valido da filtrare.")
-    df_filtrato = pd.DataFrame()
 
-# --- 5. LOGICA DEI COLORI E CREAZIONE MAPPA ---
-mappa = folium.Map(location=[43.5, 11.0], zoom_start=8)
-if not df_filtrato.empty:
-    norm = colors.Normalize(vmin=df[COL_FILTRO].min(), vmax=df[COL_FILTRO].max())
+    user_options = {"mode": mode}
+    
+    if mode == "Analisi per Periodo":
+        st.sidebar.header("Filtri di Periodo")
+        
+        min_date, max_date = df['data'].min().date(), df['data'].max().date()
+        date_range = st.sidebar.date_input(
+            "Seleziona un periodo:",
+            value=(max_date, max_date),
+            min_value=min_date,
+            max_value=max_date
+        )
+        user_options['date_range'] = date_range
+
+        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        # Rimuove coordinate e colonne non utili per la metrica colore
+        metrics_to_show = [c for c in numeric_cols if c not in ['lat', 'lon', 'Codice']]
+        
+        color_metric = st.sidebar.selectbox(
+            "🎨 Metrica per colore mappa:",
+            options=metrics_to_show,
+            index=metrics_to_show.index(Config.DEFAULT_COLOR_METRIC) if Config.DEFAULT_COLOR_METRIC in metrics_to_show else 0
+        )
+        user_options['color_metric'] = color_metric
+
+        if len(date_range) == 2:
+            df_filtered_by_date = df[df['data'].dt.date.between(date_range[0], date_range[1])]
+            min_val, max_val = df_filtered_by_date[color_metric].min(), df_filtered_by_date[color_metric].max()
+            slider_val = st.sidebar.slider(
+                f"Mostra stazioni con '{color_metric}' >= a:",
+                min_value=float(min_val), max_value=float(max_val), value=float(min_val)
+            )
+            user_options['slider_val'] = slider_val
+
+        provinces = sorted(df['provincia'].dropna().unique())
+        selected_provinces = st.sidebar.multiselect("📍 Filtra per Provincia:", options=provinces)
+        user_options['selected_provinces'] = selected_provinces
+
+    elif mode == "Storico Singola Stazione":
+        st.sidebar.header("Selezione Stazione")
+        stations = sorted(df['stazione'].unique())
+        selected_station = st.sidebar.selectbox("Scegli una stazione:", options=stations)
+        user_options['selected_station'] = selected_station
+
+    # Opzioni comuni
+    st.sidebar.markdown("---")
+    st.sidebar.header("Opzioni Visualizzazione")
+    popup_cols = st.sidebar.multiselect(
+        "ℹ️ Dati da mostrare nel popup/tabella:",
+        options=[col for col in df.columns if col not in ['lat', 'lon']],
+        default=[c for c in ['stazione', 'provincia', 'Totale_Pioggia_Giorno', 'Temperatura_mediana', 'Piogge_Residua_Zoffoli'] if c in df.columns]
+    )
+    user_options['popup_cols'] = popup_cols
+    user_options['map_tile'] = st.sidebar.selectbox("Tipo di mappa:", ["OpenStreetMap", "Stamen Terrain", "CartoDB positron"])
+
+    return user_options
+
+
+def page_period_analysis(df, options):
+    """Mostra la pagina per l'analisi di periodo."""
+    st.header(f"📍 Analisi Mappa per il Periodo: {options['date_range'][0].strftime('%d/%m/%Y')} - {options['date_range'][1].strftime('%d/%m/%Y')}")
+
+    # 1. Filtro dati
+    df_filtered = df[df['data'].dt.date.between(options['date_range'][0], options['date_range'][1])]
+    if options['selected_provinces']:
+        df_filtered = df_filtered[df_filtered['provincia'].isin(options['selected_provinces'])]
+    
+    # 2. Aggregazione dati per stazione
+    agg_dict = {col: 'mean' for col in df_filtered.select_dtypes(include=['number')).columns}
+    # Per le piogge, è meglio la somma
+    for col in df_filtered.columns:
+        if 'piogg' in col.lower():
+            agg_dict[col] = 'sum'
+    
+    df_agg = df_filtered.groupby(['stazione', 'lat', 'lon', 'provincia']).agg(agg_dict).reset_index()
+    
+    # Applica filtro slider sui dati aggregati
+    df_agg = df_agg[df_agg[options['color_metric']] >= options['slider_val']]
+
+    st.info(f"Visualizzando **{len(df_agg)}** stazioni aggregate nel periodo selezionato.")
+
+    if df_agg.empty:
+        st.warning("Nessun dato trovato per i filtri selezionati.")
+        return
+
+    # 3. Creazione Mappa
+    mappa = folium.Map(location=[df_agg['lat'].mean(), df_agg['lon'].mean()], zoom_start=8, tiles=options['map_tile'])
+    
+    metric = options['color_metric']
+    norm = colors.Normalize(vmin=df_agg[metric].min(), vmax=df_agg[metric].max())
     colormap = cm.get_cmap('Blues')
-    def get_color_from_value(value):
-        return colors.to_hex(colormap(norm(value)))
 
-    for _, row in df_filtrato.iterrows():
-        try:
-            lat = row['Y']
-            lon = row['X']
-            valore_filtro = row[COL_FILTRO]
-            colore = get_color_from_value(valore_filtro)
+    for _, row in df_agg.iterrows():
+        popup_html = f"<h4>{row['stazione']}</h4><hr>"
+        for col in options['popup_cols']:
+            if col in row and pd.notna(row[col]):
+                val = row[col]
+                formatted_val = f"{val:.2f}" if isinstance(val, float) else val
+                popup_html += f"<b>{col.replace('_', ' ').title()}</b>: {formatted_val}<br>"
+        
+        folium.CircleMarker(
+            location=[row['lat'], row['lon']],
+            radius=8,
+            color=colors.to_hex(colormap(norm(row[metric]))),
+            fill=True, fill_color=colors.to_hex(colormap(norm(row[metric]))), fill_opacity=0.8,
+            popup=folium.Popup(popup_html, max_width=350),
+            tooltip=f"<b>{row['stazione']}</b><br>{metric.replace('_', ' ')}: {row[metric]:.2f}"
+        ).add_to(mappa)
+
+    folium_static(mappa, width=1000, height=600)
+    
+    # 4. Tabella Dati
+    with st.expander("Visualizza dati tabellari aggregati"):
+        st.dataframe(df_agg[options['popup_cols']])
+
+
+def page_station_history(df, options):
+    """Mostra la pagina per lo storico di una singola stazione."""
+    station = options['selected_station']
+    st.header(f"📈 Storico per la Stazione: {station}")
+    
+    df_station = df[df['stazione'] == station].sort_values('data')
+
+    if df_station.empty:
+        st.warning("Nessun dato storico trovato per questa stazione.")
+        return
+
+    # 1. Grafici
+    st.subheader("Andamento Precipitazioni")
+    fig1 = make_subplots(specs=[[{"secondary_y": True}]])
+    fig1.add_trace(go.Bar(x=df_station['data'], y=df_station['Totale_Pioggia_Giorno'], name='Pioggia Giorno'), secondary_y=False)
+    fig1.add_trace(go.Scatter(x=df_station['data'], y=df_station['Piogge_Residua_Zoffoli'], name='Pioggia Residua', mode='lines+markers'), secondary_y=True)
+    fig1.update_layout(title_text="Pioggia Giornaliera vs Residua")
+    fig1.update_yaxes(title_text="<b>Pioggia Giorno (mm)</b>", secondary_y=False)
+    fig1.update_yaxes(title_text="<b>Pioggia Residua</b>", secondary_y=True)
+    st.plotly_chart(fig1, use_container_width=True)
+
+    st.subheader("Andamento Temperature e Sbalzi")
+    fig2 = px.line(df_station, x='data', y=['Temperatura_mediana', 'Sbalzo_Termico'], 
+                   title='Temperatura Mediana e Sbalzo Termico',
+                   labels={'value': 'Valore', 'variable': 'Metrica'})
+    st.plotly_chart(fig2, use_container_width=True)
+
+    # 2. Mappa (Opzionale)
+    st.subheader("Posizione Geografica")
+    station_info = df_station.iloc[0]
+    map_station = folium.Map(location=[station_info['lat'], station_info['lon']], zoom_start=12)
+    folium.Marker(
+        [station_info['lat'], station_info['lon']], 
+        popup=f"<b>{station}</b><br>Quota: {station_info['Quota_m_slm']}m",
+        tooltip=station
+    ).add_to(map_station)
+    folium_static(map_station, width=1000, height=300)
+
+    # 3. Tabella Dati
+    with st.expander("Visualizza tutti i dati storici per questa stazione"):
+        st.dataframe(df_station[options['popup_cols']])
+
+
+# --- 4. APPLICAZIONE PRINCIPALE ---
+def main():
+    """Funzione principale che orchestra l'applicazione Streamlit."""
+    st.set_page_config(page_title="Analisi Meteo Avanzata", layout="wide")
+    st.title("💧 Analisi Meteo Avanzata 💧")
+
+    df = load_and_prepare_data(Config.SHEET_URL)
+    
+    if df is None:
+        st.stop()
+
+    if 'ultimo_aggiornamento' in df.columns and not df['ultimo_aggiornamento'].dropna().empty:
+        last_update = df['ultimo_aggiornamento'].dropna().iloc[0]
+        st.markdown(f"**Ultimo aggiornamento dati:** `{last_update}`")
+    
+    user_options = ui_sidebar(df)
+
+    if user_options['mode'] == "Analisi per Periodo":
+        if len(user_options.get('date_range', [])) == 2:
+            page_period_analysis(df, user_options)
+        else:
+            st.warning("Per favore, seleziona un periodo valido nella sidebar.")
             
-            # Il popup ora userà la nuova lista COLS_TO_SHOW_NAMES
-            popup_html = f"<h4>{row.get('STAZIONE', 'N/A')}</h4><hr>"
-            for col_name in COLS_TO_SHOW_NAMES:
-                if col_name in row and pd.notna(row[col_name]):
-                    val = row[col_name]
-                    # Formattazione per rendere i numeri più leggibili
-                    if isinstance(val, float):
-                        popup_html += f"<b>{col_name}</b>: {val:.2f}<br>"
-                    else:
-                        popup_html += f"<b>{col_name}</b>: {val}<br>"
+    elif user_options['mode'] == "Storico Singola Stazione":
+        page_station_history(df, user_options)
 
-            folium.CircleMarker(
-                location=[lat, lon],
-                radius=6,
-                color=colore,
-                fill=True,
-                fill_color=colore,
-                fill_opacity=0.9,
-                popup=folium.Popup(popup_html, max_width=350)
-            ).add_to(mappa)
-        except (ValueError, TypeError, KeyError):
-            continue
-else:
-    st.warning("Nessuna stazione corrisponde ai filtri selezionati.")
-
-if not df.empty:
-    min_val_legenda = df[COL_FILTRO].min()
-    max_val_legenda = df[COL_FILTRO].max()
-    norm_legenda = colors.Normalize(vmin=min_val_legenda, vmax=max_val_legenda)
-    colormap_legenda = cm.get_cmap('Blues')
-    legenda_html = f"""
-    <div style="position: fixed; bottom: 20px; left: 20px; z-index:1000; background-color: rgba(255, 255, 255, 0.8); padding: 10px; border-radius: 5px; border: 1px solid grey; font-family: sans-serif; font-size: 14px;">
-        <b>Legenda: {COL_FILTRO}</b><br>
-        <i style="background: {colors.to_hex(colormap_legenda(norm_legenda(min_val_legenda)))}; border: 1px solid #ccc;">       </i> Min ({min_val_legenda:.1f})<br>
-        <i style="background: {colors.to_hex(colormap_legenda(norm_legenda(max_val_legenda)))}; border: 1px solid #ccc;">       </i> Max ({max_val_legenda:.1f})
-    </div>
-    """
-    st.markdown(legenda_html, unsafe_allow_html=True)
-
-folium_static(mappa, width=1000, height=700)
+if __name__ == "__main__":
+    main()
