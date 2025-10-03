@@ -35,20 +35,21 @@ class Config:
 
 def clean_col_names(df):
     """Pulisce i nomi delle colonne per renderli utilizzabili in Python."""
-    cols = df.columns.str.strip() # Rimuove spazi
-    cols = cols.str.replace(r'\[.*\]', '', regex=True) # Rimuove [..]
-    cols = cols.str.replace(' ', '_', regex=False) # Sostituisce spazi con _
-    cols = cols.str.replace('[^A-Za-z0-9_]+', '', regex=True) # Rimuove caratteri speciali
+    # --- INIZIO DELLA CORREZIONE ---
+    # Rimuoviamo regex=True, dato che è il comportamento di default
+    cols = df.columns.str.strip()
+    cols = cols.str.replace(r'\[.*\]', '')      # Rimuove [..]
+    cols = cols.str.replace(' ', '_', regex=False) # Qui regex=False è importante e corretto
+    cols = cols.str.replace('[^A-Za-z0-9_]+', '') # Rimuove caratteri speciali
     df.columns = cols
+    # --- FINE DELLA CORREZIONE ---
     
     # Rinomina in base alla mappatura per coerenza
     for original, new in Config.COLUMN_MAP.items():
-        # --- QUESTA È LA LOGICA CORRETTA ---
         temp_name = original.strip()
         temp_name = re.sub(r'\[.*\]', '', temp_name)
         temp_name = temp_name.replace(' ', '_')
         clean_original = re.sub('[^A-Za-z0-9_]+', '', temp_name)
-        # --- FINE DELLA CORREZIONE ---
         
         if clean_original in df.columns:
             df.rename(columns={clean_original: new}, inplace=True)
@@ -296,6 +297,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
