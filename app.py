@@ -140,17 +140,25 @@ def ui_sidebar(df):
     return user_options
 
 
+# --- SOSTITUISCI QUESTA FUNZIONE NEL TUO CODICE ---
+
 def page_period_analysis(df, options):
     """Mostra la pagina per l'analisi di periodo."""
-    st.header(f"📍 Analisi Mappa per il Periodo: {options['date_range'][0].strftime('%d/%m/%Y')} - {options['date_range'][1].strftime('%d/%m/%Y')}")
+    # Assicura che date_range sia una tupla/lista di due elementi
+    if not isinstance(options['date_range'], (list, tuple)) or len(options['date_range']) != 2:
+        st.warning("Per favore, seleziona un periodo valido nella sidebar (data di inizio e fine).")
+        return
+        
+    start_date, end_date = options['date_range']
+    st.header(f"📍 Analisi Mappa per il Periodo: {start_date.strftime('%d/%m/%Y')} - {end_date.strftime('%d/%m/%Y')}")
 
     # 1. Filtro dati
-    df_filtered = df[df['data'].dt.date.between(options['date_range'][0], options['date_range'][1])]
+    df_filtered = df[df['data'].dt.date.between(start_date, end_date)]
     if options['selected_provinces']:
         df_filtered = df_filtered[df_filtered['provincia'].isin(options['selected_provinces'])]
     
     # 2. Aggregazione dati per stazione
-    agg_dict = {col: 'mean' for col in df_filtered.select_dtypes(include=['number')).columns}
+    agg_dict = {col: 'mean' for col in df_filtered.select_dtypes(include=['number']).columns} # <-- RIGA CORRETTA
     # Per le piogge, è meglio la somma
     for col in df_filtered.columns:
         if 'piogg' in col.lower():
@@ -159,7 +167,11 @@ def page_period_analysis(df, options):
     df_agg = df_filtered.groupby(['stazione', 'lat', 'lon', 'provincia']).agg(agg_dict).reset_index()
     
     # Applica filtro slider sui dati aggregati
-    df_agg = df_agg[df_agg[options['color_metric']] >= options['slider_val']]
+    if not df_agg.empty and options['color_metric'] in df_agg.columns:
+        df_agg = df_agg[df_agg[options['color_metric']] >= options['slider_val']]
+    else:
+        st.warning("La metrica selezionata non è disponibile per il periodo scelto.")
+        return
 
     st.info(f"Visualizzando **{len(df_agg)}** stazioni aggregate nel periodo selezionato.")
 
@@ -171,7 +183,14 @@ def page_period_analysis(df, options):
     mappa = folium.Map(location=[df_agg['lat'].mean(), df_agg['lon'].mean()], zoom_start=8, tiles=options['map_tile'])
     
     metric = options['color_metric']
-    norm = colors.Normalize(vmin=df_agg[metric].min(), vmax=df_agg[metric].max())
+    
+    # Gestisce il caso in cui tutti i valori siano uguali
+    min_metric, max_metric = df_agg[metric].min(), df_agg[metric].max()
+    if min_metric == max_metric:
+        norm = colors.Normalize(vmin=min_metric - 1, vmax=max_metric + 1)
+    else:
+        norm = colors.Normalize(vmin=min_metric, vmax=max_metric)
+        
     colormap = cm.get_cmap('Blues')
 
     for _, row in df_agg.iterrows():
@@ -196,7 +215,6 @@ def page_period_analysis(df, options):
     # 4. Tabella Dati
     with st.expander("Visualizza dati tabellari aggregati"):
         st.dataframe(df_agg[options['popup_cols']])
-
 
 def page_station_history(df, options):
     """Mostra la pagina per lo storico di una singola stazione."""
@@ -269,3 +287,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
