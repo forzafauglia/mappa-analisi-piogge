@@ -67,24 +67,24 @@ def get_view_counter():
 
 @st.cache_data(ttl=3600)
 def load_and_prepare_data(url: str):
-    """Carica, pulisce e prepara i dati per l'intera applicazione (versione corretta)."""
+    """Carica, pulisce e prepara i dati per l'intera applicazione (versione definitiva)."""
     try:
         # Carica tutti i dati come testo per evitare conversioni automatiche errate
         df = pd.read_csv(url, na_values=["#N/D", "#N/A"], dtype=str, skiprows=[1])
         df.attrs['last_loaded'] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
-        # 1. Rinomina le colonne legacy (codice invariato)
+        # 1. Rinomina le colonne legacy
         rename_dict = {v: k for k, v in COL_MAP_LEGACY.items() if v in df.columns}
         df.rename(columns=rename_dict, inplace=True)
 
-        # 2. Pulisci tutti i nomi delle colonne (codice invariato)
+        # 2. Pulisci tutti i nomi delle colonne
         def clean_name(name):
             name = re.sub(r'\[.*?\]', '', str(name))
             name = name.strip().replace(' ', '_')
             return name
         df.columns = [clean_name(col) for col in df.columns]
 
-        # 3. Identifica le colonne che devono rimanere testo
+        # 3. Colonne che devono rimanere testo e non essere convertite in numeri
         TEXT_COLUMNS = [
             'Stazione', 'COMUNE', 'DESCRIZIONE', 'COLORE',
             'ULTIMO_AGGIORNAMENTO_SHEET',
@@ -97,10 +97,11 @@ def load_and_prepare_data(url: str):
                 # Gestisce la colonna Data
                 df[col] = pd.to_datetime(df[col], errors='coerce', dayfirst=True)
             elif col not in TEXT_COLUMNS:
-                # Converte TUTTE le altre colonne (incluse X e Y) in numeri,
-                # gestendo correttamente la virgola.
+                # Converte TUTTE le altre colonne (incluse X e Y) in numeri.
+                # QUESTA È LA CORREZIONE CHIAVE: si converte prima in testo (.astype(str))
+                # e solo dopo si usa l'accessor .str per la sostituzione.
                 df[col] = pd.to_numeric(
-                    df[col].str.replace(',', '.', regex=False),
+                    df[col].astype(str).str.replace(',', '.', regex=False),
                     errors='coerce'
                 )
 
@@ -323,6 +324,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
