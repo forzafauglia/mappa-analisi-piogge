@@ -247,8 +247,8 @@ def display_station_detail(df, station_name):
                                 continue
 
             # Aggiunge le due linee dei due sbalzi
-            add_sbalzo_line(fig2, df_station, 'SBALZO TERMICO MIGLIORE', 'Sbalzo Migliore')
-            add_sbalzo_line(fig2, df_station, '2° SBALZO TERMICO MIGLIORE', '2° Sbalzo')
+            add_sbalzo_line(fig2, df_station, 'SBALZO_TERMICO_MIGLIORE', 'Sbalzo Migliore')
+            add_sbalzo_line(fig2, df_station, '2°_SBALZO_TERMICO_MIGLIORE', '2° Sbalzo')
 
             fig2.update_layout(title_text="Temp vs Piogge (50mm ~ 13°C)")
             st.plotly_chart(fig2, use_container_width=True)
@@ -273,7 +273,7 @@ def display_station_detail(df, station_name):
         default_cols_ordered = [
             'DATA', 'STAZIONE', 'TOTALE_PIOGGIA_GIORNO', 'PIOGGE_RESIDUA_ZOFFOLI',
             'TEMP_MIN', 'TEMP_MAX', 'TEMPERATURA_MEDIANA', 'TEMPERATURA_MEDIANA_MINIMA',
-            'SBALZO TERMICO MIGLIORE', '2° SBALZO TERMICO MIGLIORE',
+            'SBALZO_TERMICO_MIGLIORE', '2°_SBALZO_TERMICO_MIGLIORE',
             'UMIDITA_DEL_GIORNO', 'UMIDITA_MEDIA_7GG', 'VENTO',
             'PORCINI_CALDO_NOTE', 'DURATA_RANGE', 'CONTEGGIO_GG_ALLA_RACCOLTA',
             'PORCINI_FREDDO_NOTE', 'BOOST'
@@ -308,4 +308,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
