@@ -50,91 +50,60 @@ def load_and_prepare_data(url: str):
     try:
         df = pd.read_csv(url, na_values=["#N/D", "#N/A"], dtype=str, header=0, skiprows=[1])
         df.attrs['last_loaded'] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        
         if isinstance(df.columns, pd.MultiIndex): df.columns = ['_'.join(map(str, col)).strip() for col in df.columns.values]
-
-        rename_dict = {v: k for k, v in COL_MAP_LEGACY.items() if v in df.columns}
-        df.rename(columns=rename_dict, inplace=True)
-        
-        def clean_name(name):
-            name = re.sub(r'\[.*?\]', '', str(name))
-            name = name.strip().replace(' ', '_')
-            return name.upper()
+        rename_dict = {v: k for k, v in COL_MAP_LEGACY.items() if v in df.columns}; df.rename(columns=rename_dict, inplace=True)
+        def clean_name(name): return re.sub(r'\[.*?\]', '', str(name)).strip().replace(' ', '_').upper()
         df.columns = [clean_name(col) for col in df.columns]
-
         df = df.loc[:, ~df.columns.duplicated()]
-
-        # FIX SBALZO TERMICO: Crea colonne numeriche e di data
         for sbalzo_col, suffisso in [("SBALZO_TERMICO_MIGLIORE", "MIGLIORE"), ("SBALZO_TERMICO_SECONDO", "SECONDO")]:
             if sbalzo_col in df.columns:
                 split_cols = df[sbalzo_col].str.split(' - ', n=1, expand=True)
                 if split_cols.shape[1] == 2:
                     df[f"SBALZO_NUMERICO_{suffisso}"] = pd.to_numeric(split_cols[0].str.replace(',', '.'), errors='coerce')
                     df[f"SBALZO_DATA_{suffisso}"] = pd.to_datetime(split_cols[1], format='%d/%m/%Y', errors='coerce')
-        
         TEXT_COLUMNS = [ 'STAZIONE', 'COMUNE', 'DESCRIZIONE', 'COLORE', 'ULTIMO_AGGIORNAMENTO_SHEET', 'SBALZO_TERMICO_MIGLIORE', 'SBALZO_TERMICO_SECONDO' ]
         for col in df.columns:
             if col == 'DATA': df[col] = pd.to_datetime(df[col], errors='coerce', dayfirst=True)
             elif col not in TEXT_COLUMNS and not col.startswith("SBALZO_"):
                 df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '.', regex=False), errors='coerce')
-        
         df.dropna(subset=['Y', 'X', 'DATA'], inplace=True, how='any')
         return df
     except Exception as e:
-        st.error(f"Errore critico durante il caricamento dei dati: {e}")
-        return None
+        st.error(f"Errore critico durante il caricamento dei dati: {e}"); return None
 
 def create_map(tile, location=[43.5, 11.0], zoom=8):
-    """Crea una mappa Folium gestendo l'attribuzione di Stamen."""
-    if tile == "Stamen Terrain":
+    if "Stamen" in tile:
         return folium.Map(location=location, zoom_start=zoom, tiles=tile, attr='&copy; <a href="https://www.stadiamaps.com/" target="_blank">Stadia Maps</a> &copy; <a href="https://openmaptiles.org/" target="_blank">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors')
     return folium.Map(location=location, zoom_start=zoom, tiles=tile)
 
 def display_main_map(df):
     st.header("🗺️ Mappa Riepilogativa (Situazione Attuale)")
-    last_date = df['DATA'].max()
-    df_latest = df[df['DATA'] == last_date].copy()
+    last_date = df['DATA'].max(); df_latest = df[df['DATA'] == last_date].copy()
     st.info(f"Visualizzazione dati aggiornati al: **{last_date.strftime('%d/%m/%Y')}**")
-    
     st.sidebar.title("Informazioni e Filtri Riepilogo")
-    st.sidebar.markdown("---")
-    map_tile = st.sidebar.selectbox("Tipo di mappa:", ["OpenStreetMap", "Stamen Terrain", "CartoDB positron"], key="tile_main")
-    
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Statistiche")
+    st.sidebar.markdown("---"); map_tile = st.sidebar.selectbox("Tipo di mappa:", ["OpenStreetMap", "Stamen Terrain", "CartoDB positron"], key="tile_main")
+    st.sidebar.markdown("---"); st.sidebar.subheader("Statistiche")
     counter = get_view_counter(); st.sidebar.info(f"Visite totali: **{counter['count']}**")
     st.sidebar.info(f"App aggiornata il: **{df.attrs['last_loaded']}**")
     if 'ULTIMO_AGGIORNAMENTO_SHEET' in df_latest.columns and not df_latest['ULTIMO_AGGIORNAMENTO_SHEET'].empty: st.sidebar.info(f"Sheet aggiornato il: **{df_latest['ULTIMO_AGGIORNAMENTO_SHEET'].iloc[0]}**")
-    
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Filtri Dati Standard")
+    st.sidebar.markdown("---"); st.sidebar.subheader("Filtri Dati Standard")
     df_filtrato = df_latest.copy()
     for colonna in COLONNE_FILTRO_RIEPILOGO:
         if colonna in df_filtrato.columns and not df_filtrato[colonna].dropna().empty:
-            min_val, max_val = float(df_filtrato[colonna].min()), float(df_filtrato[colonna].max())
-            slider_label = colonna.replace('_', ' ').title()
-            # FIX FILTRI A ZERO
+            max_val = float(df_filtrato[colonna].max()); slider_label = colonna.replace('_', ' ').title()
             val_selezionato = st.sidebar.slider(f"Filtra per {slider_label}", 0.0, max_val, (0.0, max_val))
-            df_filtrato = df_filtrato[(df_filtrato[colonna].fillna(0) >= val_selezionato[0]) & (df_filtrato[colonna].fillna(0) <= val_selezionato[1])]
-
-    # FIX FILTRI SBALZO TERMICO
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Filtri Sbalzo Termico")
+            df_filtrato = df_filtrato[df_filtrato[colonna].fillna(0).between(val_selezionato[0], val_selezionato[1])]
+    st.sidebar.markdown("---"); st.sidebar.subheader("Filtri Sbalzo Termico")
     for sbalzo_col, suffisso in [("SBALZO_NUMERICO_MIGLIORE", "Migliore"), ("SBALZO_NUMERICO_SECONDO", "Secondo")]:
         if sbalzo_col in df_filtrato.columns and not df_filtrato[sbalzo_col].dropna().empty:
             max_val = float(df_filtrato[sbalzo_col].max())
             val_selezionato = st.sidebar.slider(f"Sbalzo Termico {suffisso}", 0.0, max_val, (0.0, max_val))
             df_filtrato = df_filtrato[df_filtrato[sbalzo_col].fillna(0).between(val_selezionato[0], val_selezionato[1])]
-    
-    st.sidebar.markdown("---")
-    st.sidebar.success(f"Visualizzati {len(df_filtrato)} marker sulla mappa.")
-    
+    st.sidebar.markdown("---"); st.sidebar.success(f"Visualizzati {len(df_filtrato)} marker sulla mappa.")
     df_mappa = df_filtrato.dropna(subset=['Y', 'X']).copy()
-    mappa = create_map(map_tile)
-    Geocoder(collapsed=True, placeholder='Cerca un luogo...', add_marker=True).add_to(mappa)
-
+    mappa = create_map(map_tile); Geocoder(collapsed=True, placeholder='Cerca un luogo...', add_marker=True).add_to(mappa)
     def create_popup_html(row):
-        html = """<style>...</style><div class="popup-container">""" # Stile CSS invariato
+        html = """<style>.popup-container{font-family:Arial,sans-serif;font-size:13px;max-height:350px;overflow-y:auto;overflow-x:hidden}h4{margin-top:12px;margin-bottom:5px;color:#0057e7;border-bottom:1px solid #ccc;padding-bottom:3px}table{width:100%;border-collapse:collapse;margin-bottom:10px}td{text-align:left;padding:4px;border-bottom:1px solid #eee}td:first-child{font-weight:bold;color:#333;width:65%}td:last-child{color:#555}.btn-container{text-align:center;margin-top:15px;}.btn{background-color:#007bff;color:white;padding:8px 12px;border-radius:5px;text-decoration:none;font-weight:bold;}</style><div class="popup-container">"""
         groups = { "Info Stazione": ["Stazione", "DESCRIZIONE", "COMUNE", "ALTITUDINE"], "Dati Meteo": ["TEMPERATURA MEDIANA MINIMA", "TEMPERATURA MEDIANA", "UMIDITA MEDIA 7GG", "PIOGGE RESIDUA", "Totale Piogge Mensili"], "Analisi Base": ["MEDIA PORCINI CALDO BASE", "MEDIA PORCINI CALDO BOOST", "DURATA RANGE CALDO", "CONTEGGIO GG ALLA RACCOLTA CALDO", "MEDIA PORCINI FREDDO BASE", "MEDIA PORCINI FREDDO BOOST", "DURATA RANGE FREDDO", "CONTEGGIO GG ALLA RACCOLTA FREDDO"], "Analisi Sbalzo Migliore": ["SBALZO TERMICO MIGLIORE", "MEDIA PORCINI CALDO ST MIGLIORE", "MEDIA BOOST CALDO ST MIGLIORE", "GG ST MIGLIORE CALDO", "MEDIA PORCINI FREDDO ST MIGLIORE", "MEDIA BOOST FREDDO ST MIGLIORE", "GG ST MIGLIORE FREDDO"], "Analisi Sbalzo Secondo": ["SBALZO TERMICO SECONDO", "MEDIA PORCINI CALDO ST SECONDO", "MEDIA BOOST CALDO ST SECONDO", "GG ST SECONDO CALDO", "MEDIA PORCINI FREDDO ST SECONDO", "MEDIA BOOST FREDDO ST SECONDO", "GG ST SECONDO FREDDO"] }
         for title, columns in groups.items():
             table_html = "<table>"; has_content = False
@@ -147,13 +116,11 @@ def display_main_map(df):
                     table_html += f"<tr><td>{col_name_label}</td><td>{value_str}</td></tr>"
             table_html += "</table>"
             if has_content: html += f"<h4>{title}</h4>{table_html}"
-        station_name_for_url = row['STAZIONE']
-        link = f'?station={station_name_for_url}'; html += f'<div class="btn-container"><a href="{link}" target="_self" class="btn">📈 Mostra Storico Stazione</a></div>'; html += "</div>"
+        station_name_for_url = row['STAZIONE']; link = f'?station={station_name_for_url}'; html += f'<div class="btn-container"><a href="{link}" target="_self" class="btn">📈 Mostra Storico Stazione</a></div>'; html += "</div>"
         return html
     def get_marker_color(val): return {"ROSSO": "red", "GIALLO": "yellow", "ARANCIONE": "orange", "VERDE": "green"}.get(str(val).strip().upper(), "gray")
     for _, row in df_mappa.iterrows():
-        try:
-            # FIX LAT/LON INVERTITE
+        try: # --- FIX COORDINATE ---
             lat, lon = float(row['Y']), float(row['X'])
             colore = get_marker_color(row.get('COLORE', 'gray')); popup_html = create_popup_html(row)
             folium.CircleMarker(location=[lat, lon], radius=6, color=colore, fill=True, fill_color=colore, fill_opacity=0.9, popup=folium.Popup(popup_html, max_width=380)).add_to(mappa)
@@ -161,44 +128,31 @@ def display_main_map(df):
     folium_static(mappa, width=1000, height=700)
 
 def display_period_analysis(df):
-    st.header("📊 Analisi di Periodo con Piogge Aggregate")
-    st.sidebar.title("Filtri di Periodo")
+    st.header("📊 Analisi di Periodo con Piogge Aggregate"); st.sidebar.title("Filtri di Periodo")
     map_tile = st.sidebar.selectbox("Tipo di mappa:", ["OpenStreetMap", "Stamen Terrain", "CartoDB positron"], key="tile_period")
     min_date, max_date = df['DATA'].min().date(), df['DATA'].max().date()
     date_range = st.sidebar.date_input("Seleziona un periodo:", value=(max_date, max_date), min_value=min_date, max_value=max_date)
     if len(date_range) != 2: st.warning("Seleziona un intervallo di date valido."); st.stop()
     start_date, end_date = date_range
     df_filtered = df[df['DATA'].dt.date.between(start_date, end_date)]
-    agg_cols = {'TOTALE_PIOGGIA_GIORNO': 'sum', 'Y': 'first', 'X': 'first'}
-    df_agg = df_filtered.groupby('STAZIONE').agg(agg_cols).reset_index()
+    agg_cols = {'TOTALE_PIOGGIA_GIORNO': 'sum', 'Y': 'first', 'X': 'first'}; df_agg = df_filtered.groupby('STAZIONE').agg(agg_cols).reset_index()
     df_agg = df_agg[df_agg['TOTALE_PIOGGIA_GIORNO'] > 0]
     st.info(f"Visualizzando **{len(df_agg)}** stazioni con precipitazioni nel periodo selezionato.")
     if df_agg.empty: st.warning("Nessuna precipitazione registrata nel periodo."); return
-
     mappa = create_map(map_tile, location=[df_agg['Y'].mean(), df_agg['X'].mean()])
-    
-    # FIX ANALISI PERIODO PIU' CHIARA
-    if not df_agg.empty:
-        min_rain, max_rain = df_agg['TOTALE_PIOGGIA_GIORNO'].min(), df_agg['TOTALE_PIOGGIA_GIORNO'].max()
-        colormap = linear.YlGnBu_09.scale(vmin=min_rain, vmax=max_rain)
-        colormap.caption = 'Totale Piogge (mm) nel Periodo'
-        mappa.add_child(colormap)
-
-        for _, row in df_agg.iterrows():
-            color = colormap(row['TOTALE_PIOGGIA_GIORNO'])
-            # FIX LAT/LON INVERTITE
-            lat, lon = float(row['Y']), float(row['X'])
-            folium.CircleMarker(
-                location=[lat, lon],
-                radius=8,
-                color=color,
-                fill=True,
-                fill_color=color,
-                fill_opacity=0.7,
-                popup=f"<b>{row['STAZIONE']}</b><br>Totale Pioggia: {row['TOTALE_PIOGGIA_GIORNO']:.1f} mm",
-                tooltip=f"{row['STAZIONE']}: {row['TOTALE_PIOGGIA_GIORNO']:.1f} mm"
-            ).add_to(mappa)
-
+    min_rain, max_rain = df_agg['TOTALE_PIOGGIA_GIORNO'].min(), df_agg['TOTALE_PIOGGIA_GIORNO'].max()
+    colormap = linear.YlGnBu_09.scale(vmin=min_rain, vmax=max_rain if max_rain > min_rain else min_rain + 1)
+    colormap.caption = 'Totale Piogge (mm) nel Periodo'; mappa.add_child(colormap)
+    for _, row in df_agg.iterrows():
+        # --- FIX POPUP CON GRAFICO INTERATTIVO ---
+        fig = go.Figure(go.Bar(x=['Pioggia Totale'], y=[row['TOTALE_PIOGGIA_GIORNO']], marker_color='#007bff', text=[f"{row['TOTALE_PIOGGIA_GIORNO']:.1f} mm"], textposition='auto'))
+        fig.update_layout(title_text=f"<b>{row['STAZIONE']}</b>", title_font_size=14, yaxis_title="mm", width=250, height=200, margin=dict(l=40, r=20, t=40, b=20), showlegend=False)
+        config = {'displayModeBar': False}; html_chart = fig.to_html(full_html=False, include_plotlyjs='cdn', config=config)
+        iframe = folium.IFrame(html_chart, width=280, height=230); popup = folium.Popup(iframe, max_width=300)
+        # --- FIX COORDINATE ---
+        lat, lon = float(row['Y']), float(row['X'])
+        color = colormap(row['TOTALE_PIOGGIA_GIORNO'])
+        folium.CircleMarker(location=[lat, lon], radius=8, color=color, fill=True, fill_color=color, fill_opacity=0.7, popup=popup, tooltip=f"{row['STAZIONE']}: {row['TOTALE_PIOGGIA_GIORNO']:.1f} mm").add_to(mappa)
     folium_static(mappa, width=1000, height=700)
     with st.expander("Vedi dati aggregati"): st.dataframe(df_agg)
 
@@ -207,60 +161,54 @@ def display_station_detail(df, station_name):
     st.header(f"📈 Storico Dettagliato: {station_name}")
     df_station = df[df['STAZIONE'] == station_name].sort_values('DATA').copy()
     if df_station.empty: st.error("Dati non trovati."); return
-    
-    st.subheader("Andamento Precipitazioni Giornaliere")
-    fig1 = go.Figure(go.Bar(x=df_station['DATA'], y=df_station['TOTALE_PIOGGIA_GIORNO'])); fig1.update_layout(title="Pioggia Giornaliera", xaxis_title="Data", yaxis_title="mm"); st.plotly_chart(fig1, use_container_width=True)
-    
+    st.subheader("Andamento Precipitazioni Giornaliere"); fig1 = go.Figure(go.Bar(x=df_station['DATA'], y=df_station['TOTALE_PIOGGIA_GIORNO'])); fig1.update_layout(title="Pioggia Giornaliera", xaxis_title="Data", yaxis_title="mm"); st.plotly_chart(fig1, use_container_width=True)
+    # --- FIX GRAFICO CORRELAZIONE ---
     st.subheader("Correlazione Temperatura Mediana e Piogge Residue")
-    fig2 = make_subplots(specs=[[{"secondary_y": True}]])
-    # FIX GRAFICO CORRELAZIONE
-    fig2.add_trace(go.Scatter(x=df_station['DATA'], y=df_station['PIOGGE_RESIDUA'], name='Piogge Residua', mode='lines', line=dict(color='blue')), secondary_y=False)
-    fig2.add_trace(go.Scatter(x=df_station['DATA'], y=df_station['TEMPERATURA_MEDIANA'], name='Temperatura Mediana', mode='lines', line=dict(color='red')), secondary_y=True)
-    min_rain, max_rain = df_station['PIOGGE_RESIDUA'].min(), df_station['PIOGGE_RESIDUA'].max()
-    temp_range_min, temp_range_max = 0.1 * min_rain + 8, 0.1 * max_rain + 8
-    fig2.update_yaxes(title_text="<b>Piogge Residua</b>", range=[min_rain, max_rain], secondary_y=False)
-    fig2.update_yaxes(title_text="<b>Temperatura Mediana (°C)</b>", range=[temp_range_min, temp_range_max], secondary_y=True)
-    def add_sbalzo_line(fig, sbalzo_series, name):
-        sbalzo_str = sbalzo_series.dropna().iloc[-1] if not sbalzo_series.dropna().empty else None
-        if sbalzo_str and isinstance(sbalzo_str, str) and ' - ' in sbalzo_str:
-            try:
-                val, date_str = sbalzo_str.split(' - '); sbalzo_date = datetime.strptime(date_str.strip(), '%d/%m/%Y')
-                fig.add_vline(x=sbalzo_date, line_width=2, line_dash="dash", line_color="green", annotation_text=f"{name} ({val.strip()})", annotation_position="top left")
-            except Exception: pass
-    if 'SBALZO_TERMICO_MIGLIORE' in df_station.columns: add_sbalzo_line(fig2, df_station['SBALZO_TERMICO_MIGLIORE'], "Sbalzo Migliore")
-    if 'SBALZO_TERMICO_SECONDO' in df_station.columns: add_sbalzo_line(fig2, df_station['SBALZO_TERMICO_SECONDO'], "2° Sbalzo")
-    fig2.update_layout(title_text="Temp vs Piogge (50mm ~ 13°C)"); st.plotly_chart(fig2, use_container_width=True)
-    
-    st.subheader("Andamento Temperature Minime e Massime")
-    fig3 = go.Figure()
-    fig3.add_trace(go.Scatter(x=df_station['DATA'], y=df_station['TEMP_MAX'], name='Temp Max', line=dict(color='orangered')))
-    fig3.add_trace(go.Scatter(x=df_station['DATA'], y=df_station['TEMP_MIN'], name='Temp Min', line=dict(color='skyblue'), fill='tonexty'))
-    fig3.update_layout(title="Escursione Termica Giornaliera", xaxis_title="Data", yaxis_title="°C"); st.plotly_chart(fig3, use_container_width=True)
-    
+    if 'PIOGGE_RESIDUA' in df_station.columns and 'TEMPERATURA_MEDIANA' in df_station.columns and not df_station['PIOGGE_RESIDUA'].dropna().empty():
+        fig2 = make_subplots(specs=[[{"secondary_y": True}]])
+        fig2.add_trace(go.Scatter(x=df_station['DATA'], y=df_station['PIOGGE_RESIDUA'], name='Piogge Residua', mode='lines', line=dict(color='blue')), secondary_y=False)
+        fig2.add_trace(go.Scatter(x=df_station['DATA'], y=df_station['TEMPERATURA_MEDIANA'], name='Temperatura Mediana', mode='lines', line=dict(color='red')), secondary_y=True)
+        min_rain, max_rain = df_station['PIOGGE_RESIDUA'].min(), df_station['PIOGGE_RESIDUA'].max()
+        temp_range_min, temp_range_max = 0.1 * min_rain + 8, 0.1 * max_rain + 8
+        fig2.update_yaxes(title_text="<b>Piogge Residua</b>", range=[min_rain, max_rain], secondary_y=False)
+        fig2.update_yaxes(title_text="<b>Temperatura Mediana (°C)</b>", range=[temp_range_min, temp_range_max], secondary_y=True)
+        def add_sbalzo_line(fig, sbalzo_series, name):
+            if sbalzo_series.name in df_station.columns and not sbalzo_series.dropna().empty:
+                sbalzo_str = sbalzo_series.dropna().iloc[-1]
+                if isinstance(sbalzo_str, str) and ' - ' in sbalzo_str:
+                    try:
+                        val, date_str = sbalzo_str.split(' - '); sbalzo_date = datetime.strptime(date_str.strip(), '%d/%m/%Y')
+                        fig.add_vline(x=sbalzo_date, line_width=2, line_dash="dash", line_color="green", annotation_text=f"{name} ({val.strip()})", annotation_position="top left")
+                    except Exception: pass
+        add_sbalzo_line(fig2, df_station['SBALZO_TERMICO_MIGLIORE'], "Sbalzo Migliore"); add_sbalzo_line(fig2, df_station['SBALZO_TERMICO_SECONDO'], "2° Sbalzo")
+        fig2.update_layout(title_text="Temp vs Piogge (50mm ~ 13°C)"); st.plotly_chart(fig2, use_container_width=True)
+    else: st.warning("Dati di Piogge Residue o Temperatura Mediana non disponibili per questa stazione.")
+    st.subheader("Andamento Temperature Minime e Massime"); fig3 = go.Figure(); fig3.add_trace(go.Scatter(x=df_station['DATA'], y=df_station['TEMP_MAX'], name='Temp Max', line=dict(color='orangered'))); fig3.add_trace(go.Scatter(x=df_station['DATA'], y=df_station['TEMP_MIN'], name='Temp Min', line=dict(color='skyblue'), fill='tonexty')); fig3.update_layout(title="Escursione Termica Giornaliera", xaxis_title="Data", yaxis_title="°C"); st.plotly_chart(fig3, use_container_width=True)
+    # --- FIX TABELLA OTTIMIZZATA ---
     with st.expander("Visualizza tabella dati storici completi"):
-        cols_to_show = [col for col in df.columns if col not in ['Y', 'X']]; 
-        # FIX TABELLA ORDINATA
-        st.dataframe(df_station[cols_to_show].sort_values('DATA', ascending=False))
+        all_cols = sorted([col for col in df_station.columns if col not in ['Y', 'X']])
+        default_cols = ['DATA', 'TOTALE_PIOGGIA_GIORNO', 'PIOGGE_RESIDUA', 'TEMPERATURA_MEDIANA', 'TEMP_MIN', 'TEMP_MAX']
+        # Assicura che le colonne di default esistano nel dataframe
+        default_cols_exist = [col for col in default_cols if col in all_cols]
+        
+        selected_cols = st.multiselect("Seleziona le colonne da visualizzare:", options=all_cols, default=default_cols_exist)
+        if selected_cols:
+            st.dataframe(df_station[selected_cols].sort_values('DATA', ascending=False))
+        else:
+            st.info("Seleziona almeno una colonna per visualizzare i dati.")
 
 def main():
     st.set_page_config(page_title="Mappa Funghi Protetta", layout="wide")
     st.title("💧 Analisi Meteo Funghi – by Bobo 🍄")
-    
     query_params = st.query_params
-    
     df = load_and_prepare_data(SHEET_URL)
     if df is None or df.empty: st.warning("Dati non disponibili o caricamento fallito."); st.stop()
-    
-    # FIX RIMOZIONE PASSWORD PER LINK DIRETTI
     if "station" in query_params:
         display_station_detail(df, query_params["station"])
     else:
-        # La password è richiesta solo per la pagina principale
         if not check_password(): st.stop()
-        
         counter = get_view_counter()
         if st.session_state.get('just_logged_in', True): counter["count"] += 1; st.session_state['just_logged_in'] = False
-        
         mode = st.radio("Seleziona la modalità:", ["Mappa Riepilogativa", "Analisi di Periodo"], horizontal=True)
         if mode == "Mappa Riepilogativa": display_main_map(df)
         elif mode == "Analisi di Periodo": display_period_analysis(df)
