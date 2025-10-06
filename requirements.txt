@@ -1,7 +1,5 @@
 streamlit
 pandas
-folium
-streamlit-folium
-matplotlib
+numpy
 plotly
-openpyxl
+folium>=0.14.0
