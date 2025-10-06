@@ -66,7 +66,12 @@ def load_and_prepare_data(url: str):
                 split_cols = df[sbalzo_col].str.split(' - ', n=1, expand=True)
                 if split_cols.shape[1] == 2:
                     df[f"LEGENDA_SBALZO_NUMERICO_{suffisso}"] = pd.to_numeric(split_cols[0].str.replace(',', '.'), errors='coerce')
-        TEXT_COLUMNS = ['STAZIONE', 'LEGENDA_DESCRIZIONE', 'LEGENDA_COMUNE', 'LEGENDA_COLORE', 'LEGENDA_ULTIMO_AGGIORNAMENTO_SHEET', 'LEGENDA_SBALZO_TERMICO_MIGLIORE', 'LEGENDA_SBALZO_TERMICO_SECONDO', 'PORCINI_CALDO_NOTE', 'PORCINI_FREDDO_NOTE']
+        TEXT_COLUMNS = [
+            'STAZIONE', 'LEGENDA_DESCRIZIONE', 'LEGENDA_COMUNE', 'LEGENDA_COLORE', 'LEGENDA_ULTIMO_AGGIORNAMENTO_SHEET', 
+            'LEGENDA_SBALZO_TERMICO_MIGLIORE', 'LEGENDA_SBALZO_TERMICO_SECONDO', 
+            'PORCINI_CALDO_NOTE', 'PORCINI_FREDDO_NOTE',
+            'SBALZO_TERMICO_MIGLIORE', '2°_SBALZO_TERMICO_MIGLIORE'
+        ]
         for col in df.columns:
             if col == 'DATA': df[col] = pd.to_datetime(df[col], errors='coerce', dayfirst=True)
             elif col not in TEXT_COLUMNS:
@@ -314,3 +319,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
