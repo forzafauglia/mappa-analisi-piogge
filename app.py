@@ -171,9 +171,8 @@ def display_period_analysis(df):
     folium_static(mappa, width=1000, height=700)
     with st.expander("Vedi dati aggregati"): st.dataframe(df_agg)
 
-# --- FUNZIONE DI DEBUG MIGLIORATA E SICURA ---
 def add_sbalzo_line(fig, df_data, sbalzo_col_name, label):
-    # Blocco di Diagnosi
+    # Blocco di Diagnosi (lo manteniamo per sicurezza)
     if sbalzo_col_name not in df_data.columns:
         st.warning(f"DEBUG: La colonna '{sbalzo_col_name}' NON è stata trovata.")
         return 
@@ -181,7 +180,8 @@ def add_sbalzo_line(fig, df_data, sbalzo_col_name, label):
     df_valid_sbalzo = df_data.dropna(subset=[sbalzo_col_name])
     
     if df_valid_sbalzo.empty:
-        st.info(f"DEBUG: La colonna '{sbalzo_col_name}' esiste, ma non ci sono valori per questa stazione.")
+        # Rimuoviamo questo messaggio per non sporcare l'interfaccia, ora sappiamo che il problema non è qui
+        # st.info(f"DEBUG: La colonna '{sbalzo_col_name}' esiste, ma non ci sono valori per questa stazione.")
         return
     
     # Ciclo di processamento
@@ -194,20 +194,37 @@ def add_sbalzo_line(fig, df_data, sbalzo_col_name, label):
                 sbalzo_val = valore.strip().replace(",", ".")
                 sbalzo_date = datetime.strptime(data_str.strip(), "%d/%m/%Y")
                 
-                fig.add_vline(
-                    x=sbalzo_date.strftime('%Y-%m-%d'),
-                    line_width=2,
-                    line_dash="dash",
-                    line_color="green",
-                    annotation_text=f"{label} ({sbalzo_val})",
-                    annotation_position="top left"
+                # --- NUOVO METODO ROBUSTO ---
+                
+                # 1. Disegna la linea verticale usando add_shape
+                fig.add_shape(
+                    type="line",
+                    x0=sbalzo_date, y0=0,
+                    x1=sbalzo_date, y1=1,
+                    line=dict(color="Green", width=2, dash="dash"),
+                    xref="x", yref="paper"  # yref='paper' fa sì che la linea occupi tutta l'altezza del grafico
                 )
+                
+                # 2. Aggiunge l'annotazione di testo separatamente
+                fig.add_annotation(
+                    x=sbalzo_date,
+                    y=1.05,  # Posiziona l'annotazione leggermente sopra la parte alta del grafico
+                    xref="x", yref="paper",
+                    text=f"{label} ({sbalzo_val})",
+                    showarrow=False,
+                    xanchor="left",
+                    font=dict(
+                        family="Arial",
+                        size=12,
+                        color="black"
+                    )
+                )
+
             except ValueError:
-                st.error(f"DEBUG: Impossibile processare il valore '{sbalzo_str}' nella colonna '{sbalzo_col_name}'. Il formato della data non è 'gg/mm/aaaa'.")
+                st.error(f"DEBUG: Impossibile processare il valore '{sbalzo_str}'. Formato data non valido.")
                 continue
         else:
-            st.warning(f"DEBUG: Trovato valore '{sbalzo_str}' in '{sbalzo_col_name}' ma non è nel formato atteso ('valore - data').")
-
+            st.warning(f"DEBUG: Valore '{sbalzo_str}' non nel formato atteso.")
 def display_station_detail(df, station_name):
     if st.button("⬅️ Torna alla Mappa Riepilogativa"):
         st.session_state['password_correct'] = True
@@ -319,5 +336,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
