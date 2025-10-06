@@ -35,7 +35,7 @@ def check_password():
     def password_entered():
         if st.session_state.get("password") == st.secrets.get("password"):
             st.session_state["password_correct"] = True
-            del st.session_state["password"]
+            if "password" in st.session_state: del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
     if st.session_state.get("password_correct", False):
@@ -43,8 +43,7 @@ def check_password():
     st.text_input("Inserisci la password per accedere:", type="password", on_change=password_entered, key="password")
     if st.session_state.get("password_correct") is False and "password" in st.session_state and st.session_state.get("password"):
         st.error("😕 Password errata. Riprova.")
-    else:
-        st.stop()
+    st.stop()
     return False
 
 @st.cache_resource
@@ -90,7 +89,9 @@ def display_main_map(df):
     st.sidebar.markdown("---"); st.sidebar.subheader("Statistiche")
     counter = get_view_counter(); st.sidebar.info(f"Visite totali: **{counter['count']}**")
     st.sidebar.info(f"App aggiornata il: **{df.attrs['last_loaded']}**")
-    if 'ULTIMO_AGGIORNAMENTO_SHEET' in df_latest.columns and not df_latest['ULTIMO_AGGIORNAMENTO_SHEET'].empty: st.sidebar.info(f"Sheet aggiornato il: **{df_latest['ULTIMO_AGGIORNamento_SHEET'].iloc[0]}**")
+    # --- ECCO LA CORREZIONE DEL BUG ---
+    if 'ULTIMO_AGGIORNAMENTO_SHEET' in df_latest.columns and not df_latest['ULTIMO_AGGIORNAMENTO_SHEET'].empty:
+        st.sidebar.info(f"Sheet aggiornato il: **{df_latest['ULTIMO_AGGIORNAMENTO_SHEET'].iloc[0]}**")
     st.sidebar.markdown("---"); st.sidebar.subheader("Filtri Dati Standard")
     df_filtrato = df_latest.copy()
     for colonna in COLONNE_FILTRO_RIEPILOGO:
@@ -125,7 +126,7 @@ def display_main_map(df):
         return html
     def get_marker_color(val): return {"ROSSO": "red", "GIALLO": "yellow", "ARANCIONE": "orange", "VERDE": "green"}.get(str(val).strip().upper(), "gray")
     for _, row in df_mappa.iterrows():
-        try: # --- FIX COORDINATE ---
+        try:
             lat, lon = float(row['Y']), float(row['X'])
             colore = get_marker_color(row.get('COLORE', 'gray')); popup_html = create_popup_html(row)
             folium.CircleMarker(location=[lat, lon], radius=6, color=colore, fill=True, fill_color=colore, fill_opacity=0.9, popup=folium.Popup(popup_html, max_width=380)).add_to(mappa)
@@ -153,7 +154,6 @@ def display_period_analysis(df):
         fig.update_layout(title_text=f"<b>{row['STAZIONE']}</b>", title_font_size=14, yaxis_title="mm", width=250, height=200, margin=dict(l=40, r=20, t=40, b=20), showlegend=False)
         config = {'displayModeBar': False}; html_chart = fig.to_html(full_html=False, include_plotlyjs='cdn', config=config)
         iframe = folium.IFrame(html_chart, width=280, height=230); popup = folium.Popup(iframe, max_width=300)
-        # --- FIX COORDINATE ---
         lat, lon = float(row['Y']), float(row['X'])
         color = colormap(row['TOTALE_PIOGGIA_GIORNO'])
         folium.CircleMarker(location=[lat, lon], radius=8, color=color, fill=True, fill_color=color, fill_opacity=0.7, popup=popup, tooltip=f"{row['STAZIONE']}: {row['TOTALE_PIOGGIA_GIORNO']:.1f} mm").add_to(mappa)
@@ -164,17 +164,14 @@ def display_station_detail(df, station_name):
     if st.button("⬅️ Torna alla Mappa Riepilogativa"):
         st.session_state['password_correct'] = True
         st.query_params.clear()
-
     st.header(f"📈 Storico Dettagliato: {station_name}")
     df_station = df[df['STAZIONE'] == station_name].sort_values('DATA').copy()
     if df_station.empty: st.error("Dati non trovati."); return
     st.subheader("Andamento Precipitazioni Giornaliere"); fig1 = go.Figure(go.Bar(x=df_station['DATA'], y=df_station['TOTALE_PIOGGIA_GIORNO'])); fig1.update_layout(title="Pioggia Giornaliera", xaxis_title="Data", yaxis_title="mm"); st.plotly_chart(fig1, use_container_width=True)
-    
     st.subheader("Correlazione Temperatura Mediana e Piogge Residue")
-    # --- FIX GRAFICO CORRELAZIONE ---
     cols_needed = ['PIOGGE_RESIDUA', 'TEMPERATURA_MEDIANA']
     if all(c in df_station.columns for c in cols_needed) and not df_station[cols_needed].dropna().empty:
-        df_chart = df_station.dropna(subset=cols_needed) # Usa solo righe valide
+        df_chart = df_station.dropna(subset=cols_needed)
         fig2 = make_subplots(specs=[[{"secondary_y": True}]])
         fig2.add_trace(go.Scatter(x=df_chart['DATA'], y=df_chart['PIOGGE_RESIDUA'], name='Piogge Residua', mode='lines', line=dict(color='blue')), secondary_y=False)
         fig2.add_trace(go.Scatter(x=df_chart['DATA'], y=df_chart['TEMPERATURA_MEDIANA'], name='Temperatura Mediana', mode='lines', line=dict(color='red')), secondary_y=True)
@@ -194,7 +191,6 @@ def display_station_detail(df, station_name):
         add_sbalzo_line(fig2, df_station['SBALZO_TERMICO_MIGLIORE'], "Sbalzo Migliore"); add_sbalzo_line(fig2, df_station['SBALZO_TERMICO_SECONDO'], "2° Sbalzo")
         fig2.update_layout(title_text="Temp vs Piogge (50mm ~ 13°C)"); st.plotly_chart(fig2, use_container_width=True)
     else: st.warning("Dati di Piogge Residue o Temperatura Mediana non disponibili per questa stazione.")
-    
     st.subheader("Andamento Temperature Minime e Massime"); fig3 = go.Figure(); fig3.add_trace(go.Scatter(x=df_station['DATA'], y=df_station['TEMP_MAX'], name='Temp Max', line=dict(color='orangered'))); fig3.add_trace(go.Scatter(x=df_station['DATA'], y=df_station['TEMP_MIN'], name='Temp Min', line=dict(color='skyblue'), fill='tonexty')); fig3.update_layout(title="Escursione Termica Giornaliera", xaxis_title="Data", yaxis_title="°C"); st.plotly_chart(fig3, use_container_width=True)
     with st.expander("Visualizza tabella dati storici completi"):
         all_cols = sorted([col for col in df_station.columns if col not in ['Y', 'X']])
@@ -212,17 +208,16 @@ def main():
     query_params = st.query_params
     df = load_and_prepare_data(SHEET_URL)
     if df is None or df.empty: st.warning("Dati non disponibili o caricamento fallito."); st.stop()
-    
     if "station" in query_params:
         st.session_state['password_correct'] = True
         display_station_detail(df, query_params["station"])
     else:
-        check_password()
-        counter = get_view_counter()
-        if st.session_state.get('just_logged_in', True): counter["count"] += 1; st.session_state['just_logged_in'] = False
-        mode = st.radio("Seleziona la modalità:", ["Mappa Riepilogativa", "Analisi di Periodo"], horizontal=True)
-        if mode == "Mappa Riepilogativa": display_main_map(df)
-        elif mode == "Analisi di Periodo": display_period_analysis(df)
+        if check_password():
+            counter = get_view_counter()
+            if st.session_state.get('just_logged_in', True): counter["count"] += 1; st.session_state['just_logged_in'] = False
+            mode = st.radio("Seleziona la modalità:", ["Mappa Riepilogativa", "Analisi di Periodo"], horizontal=True)
+            if mode == "Mappa Riepilogativa": display_main_map(df)
+            elif mode == "Analisi di Periodo": display_period_analysis(df)
 
 if __name__ == "__main__":
     main()
