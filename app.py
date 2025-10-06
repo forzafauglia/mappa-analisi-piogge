@@ -69,28 +69,41 @@ def get_view_counter():
 def load_and_prepare_data(url: str):
     """Carica, pulisce e prepara i dati per l'intera applicazione."""
     try:
+        # Carica tutti i dati come testo per evitare errori di tipo automatici
         df = pd.read_csv(url, na_values=["#N/D", "#N/A"], dtype=str, skiprows=[1])
         df.attrs['last_loaded'] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
+        # 1. Rinomina le colonne in modo sicuro
         rename_dict = {v: k for k, v in COL_MAP_LEGACY.items() if v in df.columns}
         df.rename(columns=rename_dict, inplace=True)
 
+        # 2. Pulisci i nomi delle colonne rimanenti
         def clean_name(name):
-            name = re.sub(r'\[.*?\]', '', name)
+            name = re.sub(r'\[.*?\]', '', str(name)) # Aggiunto str() per sicurezza
             name = name.strip().replace(' ', '_')
             return name
         df.columns = [clean_name(col) for col in df.columns]
 
+        # 3. Converti i tipi di dato colonna per colonna (MODO CORRETTO)
         if 'Data' in df.columns:
             df['Data'] = pd.to_datetime(df['Data'], errors='coerce', dayfirst=True)
 
-        cols_to_exclude_from_numeric = ['Stazione', 'COMUNE', 'DESCRIZIONE', 'COLORE', 'ULTIMO_AGGIORNAMENTO_SHEET', 'Data', 'SBALZO_TERMICO_MIGLIORE', 'SBALZO_TERMICO_SECONDO']
+        cols_to_exclude_from_numeric = [
+            'Stazione', 'COMUNE', 'DESCRIZIONE', 'COLORE', 
+            'ULTIMO_AGGIORNAMENTO_SHEET', 'Data', 
+            'SBALZO_TERMICO_MIGLIORE', 'SBALZO_TERMICO_SECONDO'
+        ]
+        
+        # Itera sulle colonne per la conversione numerica
         for col in df.columns:
             if col not in cols_to_exclude_from_numeric:
-                df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '.'), errors='coerce')
+                # Questa è la riga critica: opera sulla singola colonna (df[col])
+                df[col] = pd.to_numeric(df[col].str.replace(',', '.'), errors='coerce')
 
+        # 4. Rimuovi le righe essenziali se mancanti
         df.dropna(subset=['Y', 'X', 'Data'], inplace=True)
         return df
+        
     except Exception as e:
         st.error(f"Errore critico durante il caricamento dei dati: {e}")
         return None
@@ -300,3 +313,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
