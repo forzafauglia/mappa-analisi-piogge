@@ -33,8 +33,7 @@ COLONNE_FILTRO_RIEPILOGO = [
 
 def check_password():
     def password_entered():
-        if st.session_state.get("password") == st.secrets.get("password"):
-            st.session_state["password_correct"] = True; del st.session_state["password"]
+        if st.session_state.get("password") == st.secrets.get("password"): st.session_state["password_correct"] = True; del st.session_state["password"]
         else: st.session_state["password_correct"] = False
     if st.session_state.get("password_correct", False): return True
     st.text_input("Inserisci la password per accedere:", type="password", on_change=password_entered, key="password")
@@ -111,7 +110,7 @@ def display_main_map(df):
             "Dati Meteo": ["LEGENDA_TEMPERATURA_MEDIANA_MINIMA", "LEGENDA_TEMPERATURA_MEDIANA", "LEGENDA_UMIDITA_MEDIA_7GG", "LEGENDA_PIOGGE_RESIDUA", "LEGENDA_TOTALE_PIOGGE_MENSILI"], 
             "Analisi Base": ["LEGENDA_MEDIA_PORCINI_CALDO_BASE", "LEGENDA_MEDIA_PORCINI_CALDO_BOOST", "LEGENDA_DURATA_RANGE_CALDO", "LEGENDA_CONTEGGIO_GG_ALLA_RACCOLTA_CALDO", "LEGENDA_MEDIA_PORCINI_FREDDO_BASE", "LEGENDA_MEDIA_PORCINI_FREDDO_BOOST", "LEGENDA_DURATA_RANGE_FREDDO", "LEGENDA_CONTEGGIO_GG_ALLA_RACCOLTA_FREDDO"], 
             "Analisi Sbalzo Migliore": ["LEGENDA_SBALZO_TERMICO_MIGLIORE", "LEGENDA_MEDIA_PORCINI_CALDO_ST_MIGLIORE", "LEGENDA_MEDIA_BOOST_CALDO_ST_MIGLIORE", "LEGENDA_GG_ST_MIGLIORE_CALDO", "LEGENDA_MEDIA_PORCINI_FREDDO_ST_MIGLIORE", "LEGENDA_MEDIA_BOOST_FREDDO_ST_MIGLIORE", "LEGENDA_GG_ST_MIGLIORE_FREDDO"], 
-            "Analisi Sbalzo Secondo": ["LEGENDA_SBALZO_TERMICO_SECONDO", "LEGENDA_MEDIA_PORCINI_CALDO_ST_SECONDO", "LEGENDA_MEDIA_BOOST_CALDO_ST_SECONDO", "LEGENDA_GG_ST_SECONDO_CALDO", "LEGENDA_MEDIA_PORCINI_FREDDO_ST_SECONDO", "LEGENDA_MEDIA_BOOST_FREDDO_ST_SECONDO", "LEGENDA_GG_ST_SECONDO_FREDDO"] 
+            "Analisi Sbalzo Secondo": ["LEGENDA_SBALZO_TERMICO_SECONDO", "LEGENDA_MEDIA_PORCINI_CALDO_ST_SECONDO", "LEGENDA_MEDIA_BOOST_CALDO_ST_SECONDO", "LEGENDA_GG_ST_SECONDO_CALDO", "LEGENDA_MEDIA_PORCini_FREDDO_ST_SECONDO", "LEGENDA_MEDIA_BOOST_FREDDO_ST_SECONDO", "LEGENDA_GG_ST_SECONDO_FREDDO"] 
         }
         for title, columns in groups.items():
             table_html = "<table>"; has_content = False
@@ -131,7 +130,9 @@ def display_main_map(df):
     
     for _, row in df_mappa.iterrows():
         try:
-            lat, lon = float(row['LATITUDINE']), float(row['LONGITUDINE'])
+            # --- FIX DEFINITIVO COORDINATE ---
+            lat, lon = float(row['LONGITUDINE']), float(row['LATITUDINE'])
+            
             colore = get_marker_color(row.get('LEGENDA_COLORE', 'gray')); popup_html = create_popup_html(row)
             folium.CircleMarker(location=[lat, lon], radius=6, color=colore, fill=True, fill_color=colore, fill_opacity=0.9, popup=folium.Popup(popup_html, max_width=380)).add_to(mappa)
         except (ValueError, TypeError): continue
@@ -152,7 +153,7 @@ def display_period_analysis(df):
         df_agg = df_agg[df_agg['TOTALE_PIOGGIA_GIORNO'].between(rain_range[0], rain_range[1])]
     st.info(f"Visualizzando **{len(df_agg)}** stazioni con precipitazioni nel periodo selezionato.")
     if df_agg.empty: st.warning("Nessuna stazione corrisponde ai filtri selezionati."); return
-    mappa = create_map(map_tile, location=[df_agg['LATITUDINE'].mean(), df_agg['LONGITUDINE'].mean()])
+    mappa = create_map(map_tile, location=[df_agg['LONGITUDINE'].mean(), df_agg['LATITUDINE'].mean()])
     min_rain, max_rain = df_agg['TOTALE_PIOGGIA_GIORNO'].min(), df_agg['TOTALE_PIOGGIA_GIORNO'].max()
     colormap = linear.YlGnBu_09.scale(vmin=min_rain, vmax=max_rain if max_rain > min_rain else min_rain + 1)
     colormap.caption = 'Totale Piogge (mm) nel Periodo'; mappa.add_child(colormap)
@@ -161,7 +162,7 @@ def display_period_analysis(df):
         fig.update_layout(title_text=f"<b>{row['STAZIONE']}</b>", title_font_size=14, yaxis_title="mm", width=250, height=200, margin=dict(l=40, r=20, t=40, b=20), showlegend=False)
         config = {'displayModeBar': False}; html_chart = fig.to_html(full_html=False, include_plotlyjs='cdn', config=config)
         iframe = folium.IFrame(html_chart, width=280, height=230); popup = folium.Popup(iframe, max_width=300)
-        lat, lon = float(row['LATITUDINE']), float(row['LONGITUDINE'])
+        lat, lon = float(row['LONGITUDINE']), float(row['LATITUDINE'])
         color = colormap(row['TOTALE_PIOGGIA_GIORNO'])
         folium.CircleMarker(location=[lat, lon], radius=8, color=color, fill=True, fill_color=color, fill_opacity=0.7, popup=popup, tooltip=f"{row['STAZIONE']}: {row['TOTALE_PIOGGIA_GIORNO']:.1f} mm").add_to(mappa)
     folium_static(mappa, width=1000, height=700)
@@ -183,22 +184,18 @@ def display_station_detail(df, station_name):
             fig2.add_trace(go.Scatter(x=df_chart['DATA'], y=df_chart['TEMPERATURA_MEDIANA'], name='Temperatura Mediana', mode='lines', line=dict(color='red')), secondary_y=True)
             min_rain, max_rain = df_chart['PIOGGE_RESIDUA_ZOFFOLI'].min(), df_chart['PIOGGE_RESIDUA_ZOFFOLI'].max()
             temp_range_min, temp_range_max = 0.1 * min_rain + 8, 0.1 * max_rain + 8
-            fig2.update_yaxes(title_text="<b>Piogge Residua</b>", range=[min_rain, max_rain], secondary_y=False)
-            fig2.update_yaxes(title_text="<b>Temperatura Mediana (°C)</b>", range=[temp_range_min, temp_range_max], secondary_y=True)
+            fig2.update_yaxes(title_text="<b>Piogge Residua</b>", range=[min_rain, max_rain], secondary_y=False, fixedrange=True)
+            fig2.update_yaxes(title_text="<b>Temperatura Mediana (°C)</b>", range=[temp_range_min, temp_range_max], secondary_y=True, fixedrange=True)
             def add_sbalzo_line(fig, df_data, sbalzo_col_name, label):
                 if sbalzo_col_name in df_data.columns and not df_data[sbalzo_col_name].dropna().empty:
                     sbalzo_series = df_data[[sbalzo_col_name, 'DATA']].dropna()
                     for _, row in sbalzo_series.iterrows():
                         sbalzo_str = row[sbalzo_col_name]
                         sbalzo_date = row['DATA']
-                        if isinstance(sbalzo_str, str) and ' - ' in sbalzo_str:
-                             # Se la data è nel testo, usiamo quella
-                            try:
-                                val, date_str = sbalzo_str.split(' - '); sbalzo_date = datetime.strptime(date_str.strip(), '%d/%m/%Y')
-                                fig.add_vline(x=sbalzo_date, line_width=2, line_dash="dash", line_color="green", annotation_text=f"{label} ({val.strip()})", annotation_position="top left")
-                            except Exception: pass
-                        elif isinstance(sbalzo_str, str): # Se c'è solo il valore
-                             fig.add_vline(x=sbalzo_date, line_width=2, line_dash="dash", line_color="green", annotation_text=f"{label} ({sbalzo_str.strip()})", annotation_position="top left")
+                        if isinstance(sbalzo_str, str):
+                            val_to_show = sbalzo_str.split(' - ')[0].strip()
+                            fig.add_vline(x=sbalzo_date, line_width=2, line_dash="dash", line_color="green", annotation_text=f"{label} ({val_to_show})", annotation_position="top left")
+
             add_sbalzo_line(fig2, df_station, 'SBALZO_TERMICO', 'Sbalzo'); add_sbalzo_line(fig2, df_station, '2_SBALZO_TERMICO_MIGLIORE', '2° Sbalzo')
             fig2.update_layout(title_text="Temp vs Piogge (50mm ~ 13°C)"); st.plotly_chart(fig2, use_container_width=True)
     else: st.warning("Dati di Piogge Residue o Temperatura Mediana non disponibili per creare il grafico.")
