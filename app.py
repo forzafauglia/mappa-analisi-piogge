@@ -46,40 +46,45 @@ def check_password(): # (Invariato)
 @st.cache_resource
 def get_view_counter(): return {"count": 0} # (Invariato)
 
-# --- FUNZIONE DI CARICAMENTO "BLINDATA" (del tuo amico) + FIX MAIUSCOLE ---
 @st.cache_data(ttl=3600)
 def load_and_prepare_data(url: str):
+    """Carica, pulisce e prepara i dati per l'applicazione — versione con fix finale per colonne duplicate."""
     try:
+        # 1. Caricamento base
         df = pd.read_csv(url, na_values=["#N/D", "#N/A"], dtype=str, header=0, skiprows=[1])
         df.attrs['last_loaded'] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         
+        # 2. Gestione MultiIndex se presente
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = ['_'.join(map(str, col)).strip() for col in df.columns.values]
-        df = df.loc[:, ~df.columns.duplicated()]
 
+        # 3. Rinomina colonne legacy
         rename_dict = {v: k for k, v in COL_MAP_LEGACY.items() if v in df.columns}
         df.rename(columns=rename_dict, inplace=True)
         
+        # 4. Pulisce e uniforma TUTTI i nomi delle colonne
         def clean_name(name):
             name = re.sub(r'\[.*?\]', '', str(name))
             name = name.strip().replace(' ', '_')
-            return name.upper() # FORZA TUTTO IN MAIUSCOLO
+            return name.upper()
         df.columns = [clean_name(col) for col in df.columns]
 
-        TEXT_COLUMNS = [ 'STAZIONE', 'COMUNE', 'DESCRIZIONE', 'COLORE', 'ULTIMO_AGGIORNAMENTO_SHEET', 'SBALZO_TERMICO_MIGLIORE', 'SBALZO_TERMICO_SECONDO' ]
+        # 5. --- LA CORREZIONE CHIAVE ---
+        # Rimuove le colonne duplicate DOPO che sono state tutte rinominate e pulite.
+        df = df.loc[:, ~df.columns.duplicated()]
 
+        # 6. Conversioni Tipi di Dato
+        TEXT_COLUMNS = [ 'STAZIONE', 'COMUNE', 'DESCRIZIONE', 'COLORE', 'ULTIMO_AGGIORNAMENTO_SHEET', 'SBALZO_TERMICO_MIGLIORE', 'SBALZO_TERMICO_SECONDO' ]
         for col in df.columns:
             if col == 'DATA':
                 df[col] = pd.to_datetime(df[col], errors='coerce', dayfirst=True)
             elif col not in TEXT_COLUMNS:
-                try:
-                    serie = df[col]
-                    if isinstance(serie, pd.DataFrame): serie = serie.iloc[:, 0]
-                    df[col] = pd.to_numeric(serie.astype(str).str.replace(',', '.', regex=False), errors='coerce')
-                except Exception as e: st.warning(f"⚠️ Errore conversione colonna {col}: {e}")
+                df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '.', regex=False), errors='coerce')
         
+        # 7. Pulizia finale
         df.dropna(subset=['Y', 'X', 'DATA'], inplace=True, how='any')
         return df
+        
     except Exception as e:
         st.error(f"Errore critico durante il caricamento dei dati: {e}")
         return None
@@ -212,3 +217,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
