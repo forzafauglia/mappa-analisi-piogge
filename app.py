@@ -195,7 +195,7 @@ def add_sbalzo_line(fig, df_data, sbalzo_col_name, label):
                 sbalzo_date = datetime.strptime(data_str.strip(), "%d/%m/%Y")
                 
                 fig.add_vline(
-                    x=sbalzo_date,
+                    x=sbalzo_date.strftime('%Y-%m-%d'),
                     line_width=2,
                     line_dash="dash",
                     line_color="green",
@@ -319,4 +319,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
