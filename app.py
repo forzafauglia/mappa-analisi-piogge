@@ -225,28 +225,34 @@ def display_station_detail(df, station_name):
             fig2.update_yaxes(title_text="<b>Temperatura Mediana (°C)</b>", range=[temp_range_min, temp_range_max], secondary_y=True, fixedrange=True)
 
             # --- Funzione linee sbalzo con data ---
-            from datetime import datetime
-def add_sbalzo_line(fig, df_data, sbalzo_col_name, label):
-    # Aggiungi un controllo di esistenza colonna più esplicito
-    if sbalzo_col_name not in df_data.columns:
-        st.warning(f"La colonna per il grafico storico '{sbalzo_col_name}' non è stata trovata nel DataFrame.")
-        return
+            
+              from datetime import datetime # Assicurati che questo import sia all'inizio del file
 
-    # Controlla se ci sono dati validi da processare
-    if df_data[sbalzo_col_name].dropna().empty:
-        st.info(f"Nessun dato valido trovato per '{sbalzo_col_name}' per questa stazione.")
-        return
+def add_sbalzo_line(fig, df_data, sbalzo_col_name, label):
+    # --- Blocco di Diagnosi ---
+    if sbalzo_col_name not in df_data.columns:
+        st.warning(f"DEBUG: La colonna '{sbalzo_col_name}' NON è stata trovata.")
+        return # Esce dalla funzione se la colonna non esiste
         
-    processed_count = 0
-    for index, row in df_data.dropna(subset=[sbalzo_col_name]).iterrows():
+    df_valid_sbalzo = df_data.dropna(subset=[sbalzo_col_name])
+    
+    if df_valid_sbalzo.empty:
+        st.info(f"DEBUG: La colonna '{sbalzo_col_name}' esiste, ma non ci sono valori per questa stazione.")
+        return # Esce se non ci sono dati
+    # --- Fine Blocco di Diagnosi ---
+
+    # Ciclo di processamento vero e proprio
+    for index, row in df_valid_sbalzo.iterrows():
         sbalzo_str = str(row[sbalzo_col_name])
         
         if " - " in sbalzo_str:
             try:
                 valore, data_str = sbalzo_str.split(" - ", 1)
                 sbalzo_val = valore.strip().replace(",", ".")
+                # Prova a convertire la data
                 sbalzo_date = datetime.strptime(data_str.strip(), "%d/%m/%Y")
                 
+                # Se tutto va bene, aggiunge la linea
                 fig.add_vline(
                     x=sbalzo_date,
                     line_width=2,
@@ -255,23 +261,14 @@ def add_sbalzo_line(fig, df_data, sbalzo_col_name, label):
                     annotation_text=f"{label} ({sbalzo_val})",
                     annotation_position="top left"
                 )
-                processed_count += 1
-            except Exception as e:
-                # Questo ci dirà se il formato della data è sbagliato
-                st.error(f"Errore nel processare il valore di sbalzo: '{sbalzo_str}'. Errore: {e}")
-                continue
-    
-    if processed_count == 0:
-        st.info(f"Trovati dati per '{sbalzo_col_name}', ma nessuno era nel formato 'valore - gg/mm/aaaa'. Esempio primo valore trovato: '{df_data[sbalzo_col_name].dropna().iloc[0]}'")
-        
-    # --- Grafico temperature min/max ---
-    st.subheader("Andamento Temperature Minime e Massime")
-    fig3 = go.Figure()
-    fig3.add_trace(go.Scatter(x=df_station['DATA'], y=df_station['TEMP_MAX'], name='Temp Max', line=dict(color='orangered')))
-    fig3.add_trace(go.Scatter(x=df_station['DATA'], y=df_station['TEMP_MIN'], name='Temp Min', line=dict(color='skyblue'), fill='tonexty'))
-    fig3.update_layout(title="Escursione Termica Giornaliera", xaxis_title="Data", yaxis_title="°C")
-    st.plotly_chart(fig3, use_container_width=True)
-
+            except ValueError:
+                # Questo errore si verifica se il formato della data è sbagliato
+                st.error(f"DEBUG: Impossibile processare il valore '{sbalzo_str}' nella colonna '{sbalzo_col_name}'. Il formato della data non è 'gg/mm/aaaa'.")
+                continue # Va al prossimo valore
+        else:
+            # Se manca il separatore " - "
+            st.warning(f"DEBUG: Trovato valore '{sbalzo_str}' in '{sbalzo_col_name}' ma non è nel formato atteso ('valore - data').")
+            
     # --- Tabella dati storici completi ---
     with st.expander("Visualizza tabella dati storici completi"):
         # Prende tutte le colonne non legenda e coordinate
@@ -316,6 +313,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
