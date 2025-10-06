@@ -79,12 +79,13 @@ def load_and_prepare_data(url: str):
 
         # 2. Pulisci i nomi delle colonne rimanenti
         def clean_name(name):
-            name = re.sub(r'\[.*?\]', '', str(name)) # Aggiunto str() per sicurezza
+            name = re.sub(r'\[.*?\]', '', str(name))
             name = name.strip().replace(' ', '_')
             return name
+
         df.columns = [clean_name(col) for col in df.columns]
 
-        # 3. Converti i tipi di dato colonna per colonna (MODO CORRETTO)
+        # 3. Conversioni tipi di dato
         if 'Data' in df.columns:
             df['Data'] = pd.to_datetime(df['Data'], errors='coerce', dayfirst=True)
 
@@ -93,20 +94,36 @@ def load_and_prepare_data(url: str):
             'ULTIMO_AGGIORNAMENTO_SHEET', 'Data', 
             'SBALZO_TERMICO_MIGLIORE', 'SBALZO_TERMICO_SECONDO'
         ]
-        
-        # Itera sulle colonne per la conversione numerica
+
+        # Conversione numerica sicura
         for col in df.columns:
             if col not in cols_to_exclude_from_numeric:
-                # Questa è la riga critica: opera sulla singola colonna (df[col])
-                df[col] = pd.to_numeric(df[col].str.replace(',', '.'), errors='coerce')
+                if isinstance(df[col], pd.Series):
+                    # Converti in stringa e sostituisci virgole con punti
+                    df[col] = (
+                        df[col].astype(str)
+                        .str.replace(',', '.', regex=False)
+                        .replace('nan', np.nan)
+                    )
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
 
-        # 4. Rimuovi le righe essenziali se mancanti
+        # 4. Pulisci coordinate e rimuovi righe incomplete
+        for coord_col in ['Y', 'X']:
+            if coord_col in df.columns:
+                df[coord_col] = pd.to_numeric(df[coord_col], errors='coerce')
+
         df.dropna(subset=['Y', 'X', 'Data'], inplace=True)
+
+        # 5. Debug opzionale (puoi commentare queste due righe)
+        # st.write("✅ Dati caricati correttamente", df.shape)
+        # st.write("Colonne:", list(df.columns))
+
         return df
-        
+
     except Exception as e:
         st.error(f"Errore critico durante il caricamento dei dati: {e}")
         return None
+
 
 # --- 3. LOGICA DI VISUALIZZAZIONE DELLE DIVERSE PAGINE ---
 
@@ -313,4 +330,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
