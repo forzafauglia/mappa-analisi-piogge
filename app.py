@@ -226,7 +226,7 @@ def display_station_detail(df, station_name):
 
             # --- Funzione linee sbalzo con data ---
             
-              from datetime import datetime # Assicurati che questo import sia all'inizio del file
+              from datetime import datetime
 
 def add_sbalzo_line(fig, df_data, sbalzo_col_name, label):
     # --- Blocco di Diagnosi ---
@@ -313,6 +313,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
