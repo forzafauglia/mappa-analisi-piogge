@@ -67,58 +67,51 @@ def get_view_counter():
 
 @st.cache_data(ttl=3600)
 def load_and_prepare_data(url: str):
-    """Carica, pulisce e prepara i dati per l'intera applicazione."""
+    """Carica, pulisce e prepara i dati per l'intera applicazione (versione corretta)."""
     try:
-        # Carica tutti i dati come testo per evitare errori di tipo automatici
+        # Carica tutti i dati come testo per evitare conversioni automatiche errate
         df = pd.read_csv(url, na_values=["#N/D", "#N/A"], dtype=str, skiprows=[1])
         df.attrs['last_loaded'] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
-        # 1. Rinomina le colonne in modo sicuro
+        # 1. Rinomina le colonne legacy (codice invariato)
         rename_dict = {v: k for k, v in COL_MAP_LEGACY.items() if v in df.columns}
         df.rename(columns=rename_dict, inplace=True)
 
-        # 2. Pulisci i nomi delle colonne rimanenti
+        # 2. Pulisci tutti i nomi delle colonne (codice invariato)
         def clean_name(name):
             name = re.sub(r'\[.*?\]', '', str(name))
             name = name.strip().replace(' ', '_')
             return name
-
         df.columns = [clean_name(col) for col in df.columns]
 
-        # 3. Conversioni tipi di dato
-        if 'Data' in df.columns:
-            df['Data'] = pd.to_datetime(df['Data'], errors='coerce', dayfirst=True)
-
-        cols_to_exclude_from_numeric = [
-            'Stazione', 'COMUNE', 'DESCRIZIONE', 'COLORE', 
-            'ULTIMO_AGGIORNAMENTO_SHEET', 'Data', 
+        # 3. Identifica le colonne che devono rimanere testo
+        TEXT_COLUMNS = [
+            'Stazione', 'COMUNE', 'DESCRIZIONE', 'COLORE',
+            'ULTIMO_AGGIORNAMENTO_SHEET',
             'SBALZO_TERMICO_MIGLIORE', 'SBALZO_TERMICO_SECONDO'
         ]
 
-        # Conversione numerica sicura
+        # 4. Itera su TUTTE le colonne per una conversione corretta e unificata
         for col in df.columns:
-            if col not in cols_to_exclude_from_numeric:
-                if isinstance(df[col], pd.Series):
-                    # Converti in stringa e sostituisci virgole con punti
-                    df[col] = (
-                        df[col].astype(str)
-                        .str.replace(',', '.', regex=False)
-                        .replace('nan', np.nan)
-                    )
-                    df[col] = pd.to_numeric(df[col], errors='coerce')
+            if col == 'Data':
+                # Gestisce la colonna Data
+                df[col] = pd.to_datetime(df[col], errors='coerce', dayfirst=True)
+            elif col not in TEXT_COLUMNS:
+                # Converte TUTTE le altre colonne (incluse X e Y) in numeri,
+                # gestendo correttamente la virgola.
+                df[col] = pd.to_numeric(
+                    df[col].str.replace(',', '.', regex=False),
+                    errors='coerce'
+                )
 
-        # 4. Pulisci coordinate e rimuovi righe incomplete
-        for coord_col in ['Y', 'X']:
-            if coord_col in df.columns:
-                df[coord_col] = pd.to_numeric(df[coord_col], errors='coerce')
-
+        # 5. Rimuovi le righe solo se mancano i dati ESSENZIALI dopo la conversione
         df.dropna(subset=['Y', 'X', 'Data'], inplace=True)
 
-        # 5. Debug opzionale (puoi commentare queste due righe)
-        # st.write("✅ Dati caricati correttamente", df.shape)
-        # st.write("Colonne:", list(df.columns))
-
         return df
+
+    except Exception as e:
+        st.error(f"Errore critico durante il caricamento dei dati: {e}")
+        return None
 
     except Exception as e:
         st.error(f"Errore critico durante il caricamento dei dati: {e}")
@@ -330,5 +323,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
