@@ -226,36 +226,44 @@ def display_station_detail(df, station_name):
 
             # --- Funzione linee sbalzo con data ---
             from datetime import datetime
-            def add_sbalzo_line(fig, df_data, sbalzo_col_name, label):
-                if sbalzo_col_name in df_data.columns and not df_data[sbalzo_col_name].dropna().empty:
-                    for _, row in df_data.dropna(subset=[sbalzo_col_name]).iterrows():
-                        sbalzo_str = str(row[sbalzo_col_name])
-                        if " - " in sbalzo_str:
-                            valore, data_str = sbalzo_str.split(" - ", 1)
-                            try:
-                                sbalzo_val = valore.replace(",", ".")
-                                sbalzo_date = datetime.strptime(data_str.strip(), "%d/%m/%Y")
-                                fig.add_vline(
-                                    x=sbalzo_date,
-                                    line_width=2,
-                                    line_dash="dash",
-                                    line_color="green",
-                                    annotation_text=f"{label} ({sbalzo_val})",
-                                    annotation_position="top left"
-                                )
-                            except:
-                                continue
+def add_sbalzo_line(fig, df_data, sbalzo_col_name, label):
+    # Aggiungi un controllo di esistenza colonna più esplicito
+    if sbalzo_col_name not in df_data.columns:
+        st.warning(f"La colonna per il grafico storico '{sbalzo_col_name}' non è stata trovata nel DataFrame.")
+        return
 
-            # Aggiunge le due linee dei due sbalzi
-            add_sbalzo_line(fig2, df_station, 'SBALZO_TERMICO_MIGLIORE', 'Sbalzo Migliore')
-            add_sbalzo_line(fig2, df_station, '2°_SBALZO_TERMICO_MIGLIORE', '2° Sbalzo')
-
-            fig2.update_layout(title_text="Temp vs Piogge (50mm ~ 13°C)")
-            st.plotly_chart(fig2, use_container_width=True)
-
-    else:
-        st.warning("Dati di Piogge Residue o Temperatura Mediana non disponibili per creare il grafico.")
-
+    # Controlla se ci sono dati validi da processare
+    if df_data[sbalzo_col_name].dropna().empty:
+        st.info(f"Nessun dato valido trovato per '{sbalzo_col_name}' per questa stazione.")
+        return
+        
+    processed_count = 0
+    for index, row in df_data.dropna(subset=[sbalzo_col_name]).iterrows():
+        sbalzo_str = str(row[sbalzo_col_name])
+        
+        if " - " in sbalzo_str:
+            try:
+                valore, data_str = sbalzo_str.split(" - ", 1)
+                sbalzo_val = valore.strip().replace(",", ".")
+                sbalzo_date = datetime.strptime(data_str.strip(), "%d/%m/%Y")
+                
+                fig.add_vline(
+                    x=sbalzo_date,
+                    line_width=2,
+                    line_dash="dash",
+                    line_color="green",
+                    annotation_text=f"{label} ({sbalzo_val})",
+                    annotation_position="top left"
+                )
+                processed_count += 1
+            except Exception as e:
+                # Questo ci dirà se il formato della data è sbagliato
+                st.error(f"Errore nel processare il valore di sbalzo: '{sbalzo_str}'. Errore: {e}")
+                continue
+    
+    if processed_count == 0:
+        st.info(f"Trovati dati per '{sbalzo_col_name}', ma nessuno era nel formato 'valore - gg/mm/aaaa'. Esempio primo valore trovato: '{df_data[sbalzo_col_name].dropna().iloc[0]}'")
+        
     # --- Grafico temperature min/max ---
     st.subheader("Andamento Temperature Minime e Massime")
     fig3 = go.Figure()
@@ -308,5 +316,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
