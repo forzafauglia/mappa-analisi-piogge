@@ -15,7 +15,7 @@ from plotly.subplots import make_subplots
 # URL del nuovo Google Sheet unificato
 SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRxitMYpUqvX6bxVaukG01lJDC8SUfXtr47Zv5ekR1IzfR1jmhUilBsxZPJ8hrktVHrBh6hUUWYUtox/pub?output=csv"
 
-# Mappatura per rinominare le colonne "Legenda_" e renderle compatibili con il primo script
+# Mappatura per rinominare le colonne "Legenda_"
 COL_MAP_LEGACY = {
     "Stazione": "Legenda_Stazione", "DESCRIZIONE": "Legenda_DESCRIZIONE", "COMUNE": "Legenda_COMUNE",
     "ALTITUDINE": "Legenda_ALTITUDINE", "X": "Longitudine", "Y": "Latitudine",
@@ -37,7 +37,7 @@ COL_MAP_LEGACY = {
     "ULTIMO_AGGIORNAMENTO_SHEET": "Legenda_ULTIMO_AGGIORNAMENTO_SHEET"
 }
 
-# Colonne da usare per i filtri della mappa riepilogativa (rimosse quelle delle piogge a 5/10gg)
+# Colonne da usare per i filtri della mappa riepilogativa
 COLONNE_FILTRO_RIEPILOGO = [
     "TEMPERATURA MEDIANA", "PIOGGE RESIDUA", "MEDIA PORCINI CALDO BASE", "MEDIA PORCINI FREDDO BASE",
     "MEDIA PORCINI CALDO ST MIGLIORE", "MEDIA PORCINI FREDDO ST MIGLIORE",
@@ -45,7 +45,7 @@ COLONNE_FILTRO_RIEPILOGO = [
 ]
 
 def check_password():
-    """Restituisce True se l'utente è autenticato, altrimenti False."""
+    # (Funzione invariata)
     def password_entered():
         if st.session_state["password"] == st.secrets["password"]:
             st.session_state["password_correct"] = True
@@ -63,35 +63,42 @@ def check_password():
 
 @st.cache_resource
 def get_view_counter():
+    # (Funzione invariata)
     return {"count": 0}
 
+# --- FUNZIONE DI CARICAMENTO DATI "BLINDATA" (del tuo amico) ---
 @st.cache_data(ttl=3600)
 def load_and_prepare_data(url: str):
-    """Carica, pulisce e prepara i dati per l'intera applicazione (versione a prova di errore intestazione)."""
+    """Carica, pulisce e prepara i dati per l'applicazione — versione blindata contro intestazioni doppie e colonne complesse."""
     try:
-        # QUESTA È LA RIGA CRUCIALE MODIFICATA:
-        # Diciamo a Pandas di usare la PRIMA riga come intestazione (header=0)
-        # e di SALTARE la SECONDA riga (skiprows=[1]), che probabilmente contiene le unità di misura.
-        df = pd.read_csv(
-            url,
-            header=0,
-            skiprows=[1],
-            na_values=["#N/D", "#N/A"],
-            dtype=str
-        )
+        # 1. Legge il CSV cercando di appiattire eventuali header multipli
+        try:
+            df = pd.read_csv(url, na_values=["#N/D", "#N/A"], dtype=str, header=0, skiprows=[1])
+        except Exception:
+            df = pd.read_csv(url, na_values=["#N/D", "#N/A"], dtype=str, header=None)
+            first_row = df.iloc[0]
+            df = df[1:]
+            df.columns = first_row
+
         df.attrs['last_loaded'] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
-        # --- Il resto della funzione è identico e ora funzionerà ---
-        
+        # 2. Appiattisce eventuali MultiIndex o colonne duplicate
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = ['_'.join(map(str, col)).strip() for col in df.columns.values]
+        df = df.loc[:, ~df.columns.duplicated()]
+
+        # 3. Rinomina colonne legacy (spostato prima della pulizia per coerenza)
         rename_dict = {v: k for k, v in COL_MAP_LEGACY.items() if v in df.columns}
         df.rename(columns=rename_dict, inplace=True)
-
+        
+        # 4. Pulisce i nomi delle colonne
         def clean_name(name):
             name = re.sub(r'\[.*?\]', '', str(name))
             name = name.strip().replace(' ', '_')
             return name
         df.columns = [clean_name(col) for col in df.columns]
 
+        # 5. Conversioni
         TEXT_COLUMNS = [
             'Stazione', 'COMUNE', 'DESCRIZIONE', 'COLORE',
             'ULTIMO_AGGIORNAMENTO_SHEET',
@@ -102,24 +109,29 @@ def load_and_prepare_data(url: str):
             if col == 'Data':
                 df[col] = pd.to_datetime(df[col], errors='coerce', dayfirst=True)
             elif col not in TEXT_COLUMNS:
-                df[col] = pd.to_numeric(
-                    df[col].astype(str).str.replace(',', '.', regex=False),
-                    errors='coerce'
-                )
+                try:
+                    serie = df[col]
+                    if isinstance(serie, pd.DataFrame):
+                        serie = serie.iloc[:, 0]
+                    df[col] = pd.to_numeric(
+                        serie.astype(str).str.replace(',', '.', regex=False),
+                        errors='coerce'
+                    )
+                except Exception as e:
+                    st.warning(f"⚠️ Errore di conversione nella colonna {col}: {e}")
 
-        df.dropna(subset=['Y', 'X', 'Data'], inplace=True)
-
+        # 6. Rimuove righe senza coordinate o data
+        df.dropna(subset=['Y', 'X', 'Data'], inplace=True, how='any')
+        
         return df
 
     except Exception as e:
         st.error(f"Errore critico durante il caricamento dei dati: {e}")
         return None
 
-
-# --- 3. LOGICA DI VISUALIZZAZIONE DELLE DIVERSE PAGINE ---
-
+# --- IL RESTO DELL'APP (INVARIATO) ---
 def display_main_map(df):
-    """Visualizza la mappa riepilogativa (logica del primo script)."""
+    # (Funzione invariata)
     st.header("🗺️ Mappa Riepilogativa (Situazione Attuale)")
     
     last_date = df['Data'].max()
@@ -188,7 +200,7 @@ def display_main_map(df):
     folium_static(mappa, width=1000, height=700)
 
 def display_period_analysis(df):
-    """Visualizza l'analisi di periodo con grafici Plotly interattivi nei popup."""
+    # (Funzione invariata)
     st.header("📊 Analisi di Periodo con Piogge Aggregate")
 
     st.sidebar.title("Filtri di Periodo")
@@ -207,7 +219,7 @@ def display_period_analysis(df):
     start_date, end_date = date_range
     df_filtered = df[df['Data'].dt.date.between(start_date, end_date)]
 
-    agg_cols = {'Totale_Pioggia_Giorno': 'sum', 'Y': 'first', 'X': 'first'}
+    agg_cols = {'Totale_Pioggia_Giorno': 'sum', 'Y': 'first', 'X': 'first', 'Stazione': 'first'}
     df_agg = df_filtered.groupby('Stazione').agg(agg_cols).reset_index()
     df_agg = df_agg[df_agg['Totale_Pioggia_Giorno'] > 0]
     
@@ -242,7 +254,7 @@ def display_period_analysis(df):
         st.dataframe(df_agg)
 
 def display_station_detail(df, station_name):
-    """Visualizza la pagina di dettaglio con grafici e tabella per una stazione."""
+    # (Funzione invariata)
     if st.button("⬅️ Torna alla Mappa Riepilogativa"):
         st.query_params.clear()
 
@@ -260,10 +272,10 @@ def display_station_detail(df, station_name):
 
     st.subheader("Correlazione Temperatura Mediana e Piogge Residue")
     fig2 = make_subplots(specs=[[{"secondary_y": True}]])
-    fig2.add_trace(go.Scatter(x=df_station['Data'], y=df_station['Piogge_Residua'], name='Piogge Residua', mode='lines', line=dict(color='blue')), secondary_y=False)
+    fig2.add_trace(go.Scatter(x=df_station['Data'], y=df_station['PIOGGE_RESIDUA'], name='Piogge Residua', mode='lines', line=dict(color='blue')), secondary_y=False)
     fig2.add_trace(go.Scatter(x=df_station['Data'], y=df_station['TEMPERATURA_MEDIANA'], name='Temperatura Mediana', mode='lines', line=dict(color='red')), secondary_y=True)
 
-    min_rain, max_rain = df_station['Piogge_Residua'].min(), df_station['Piogge_Residua'].max()
+    min_rain, max_rain = df_station['PIOGGE_RESIDUA'].min(), df_station['PIOGGE_RESIDUA'].max()
     temp_range_min = 0.1 * min_rain + 8; temp_range_max = 0.1 * max_rain + 8
     
     fig2.update_yaxes(title_text="<b>Piogge Residua</b>", range=[min_rain, max_rain], secondary_y=False, color='blue')
@@ -295,8 +307,8 @@ def display_station_detail(df, station_name):
         cols_to_show = [col for col in df.columns if not col.startswith('Legenda_') and col not in ['Y', 'X']]
         st.dataframe(df_station[cols_to_show])
 
-# --- 4. APPLICAZIONE PRINCIPALE ---
 def main():
+    # (Funzione invariata)
     st.set_page_config(page_title="Mappa Funghi Protetta", layout="wide")
     st.title("💧 Analisi Meteo Funghi – by Bobo 🍄")
 
@@ -321,8 +333,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
