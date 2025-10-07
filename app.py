@@ -225,6 +225,8 @@ def add_sbalzo_line(fig, df_data, sbalzo_col_name, label):
                 continue
         else:
             st.warning(f"DEBUG: Valore '{sbalzo_str}' non nel formato atteso.")
+# --- INIZIO DEL BLOCCO DA COPIARE ---
+
 def display_station_detail(df, station_name):
     if st.button("⬅️ Torna alla Mappa Riepilogativa"):
         st.session_state['password_correct'] = True
@@ -237,18 +239,48 @@ def display_station_detail(df, station_name):
         st.error("Dati non trovati.")
         return
 
+    # --- NUOVA MODIFICA: CONFIGURAZIONE CENTRALE PER I GRAFICI ---
+    # 1. Definiamo l'intervallo di date per lo zoom predefinito (ultimi 40 giorni)
+    if not df_station.empty:
+        end_date_default = df_station['DATA'].max()
+        start_date_default = end_date_default - pd.Timedelta(days=39) # 39 per includere il giorno finale, totale 40
+    else:
+        end_date_default = datetime.now()
+        start_date_default = end_date_default - pd.Timedelta(days=39)
+
+    # 2. Definiamo la configurazione per abilitare il download come immagine
+    config_chart = {
+        'toImageButtonOptions': {
+            'format': 'png',    # formato file
+            'scale': 2,         # scala 2x per una risoluzione migliore
+            'filename': f'grafico_{station_name}' # nome file base
+        },
+        'displaylogo': False # nasconde il logo di Plotly
+    }
+    # --- FINE MODIFICA ---
+
     # Grafico Piogge Giorno
     st.subheader("Andamento Precipitazioni Giornaliere")
     fig1 = go.Figure(go.Bar(
         x=df_station['DATA'],
         y=df_station['TOTALE_PIOGGIA_GIORNO']
     ))
+
+    # --- NUOVA MODIFICA: IMPOSTA ZOOM E ASSI FISSI PER FIGURA 1 ---
+    # Calcola il valore massimo di pioggia su tutta la storia della stazione
+    max_y_rain = df_station['TOTALE_PIOGGIA_GIORNO'].max() * 1.1 if not df_station['TOTALE_PIOGGIA_GIORNO'].empty else 100
+    
     fig1.update_layout(
         title="Pioggia Giornaliera",
         xaxis_title="Data",
-        yaxis_title="mm"
+        yaxis_title="mm",
+        xaxis_range=[start_date_default, end_date_default], # Imposta zoom predefinito
+        yaxis_range=[0, max_y_rain] # Imposta asse Y fisso
     )
-    st.plotly_chart(fig1, use_container_width=True)
+    # Aggiungiamo 'config' per abilitare il download
+    st.plotly_chart(fig1, use_container_width=True, config=config_chart)
+    # --- FINE MODIFICA ---
+
 
     # Grafico Correlazione Temperatura Mediana e Piogge Residue
     st.subheader("Correlazione Temperatura Mediana e Piogge Residue")
@@ -275,17 +307,31 @@ def display_station_detail(df, station_name):
                 line=dict(color='red')
             ), secondary_y=True)
 
-            min_rain, max_rain = df_chart['PIOGGE_RESIDUA_ZOFFOLI'].min(), df_chart['PIOGGE_RESIDUA_ZOFFOLI'].max()
-            temp_range_min, temp_range_max = 0.1 * min_rain + 8, 0.1 * max_rain + 8
-            fig2.update_yaxes(title_text="<b>Piogge Residua</b>", range=[min_rain, max_rain], secondary_y=False, fixedrange=True)
-            fig2.update_yaxes(title_text="<b>Temperatura Mediana (°C)</b>", range=[temp_range_min, temp_range_max], secondary_y=True, fixedrange=True)
+            # --- NUOVA MODIFICA: IMPOSTA ZOOM E ASSI FISSI PER FIGURA 2 ---
+            # Calcola i valori massimi e minimi sull'intera storia per gli assi Y
+            max_y_rain_res = df_chart['PIOGGE_RESIDUA_ZOFFOLI'].max() * 1.1
+            min_y_rain_res = df_chart['PIOGGE_RESIDUA_ZOFFOLI'].min() * 0.9
 
+            max_y_temp_med = df_chart['TEMPERATURA_MEDIANA'].max() * 1.1
+            min_y_temp_med = df_chart['TEMPERATURA_MEDIANA'].min() * 0.9
+
+            # Non usiamo più la vecchia logica di range dinamico
+            fig2.update_yaxes(title_text="<b>Piogge Residua</b>", range=[min_y_rain_res, max_y_rain_res], secondary_y=False, fixedrange=True)
+            fig2.update_yaxes(title_text="<b>Temperatura Mediana (°C)</b>", range=[min_y_temp_med, max_y_temp_med], secondary_y=True, fixedrange=True)
+            
+            # Impostiamo il range predefinito per l'asse X
+            fig2.update_layout(
+                title_text="Temp vs Piogge",
+                xaxis_range=[start_date_default, end_date_default] # Imposta zoom predefinito
+            )
+            # --- FINE MODIFICA ---
+            
             # Aggiunge le due linee dei due sbalzi usando la funzione di debug
             add_sbalzo_line(fig2, df_station, 'SBALZO_TERMICO_MIGLIORE', 'Sbalzo Migliore')
             add_sbalzo_line(fig2, df_station, '2°_SBALZO_TERMICO_MIGLIORE', '2° Sbalzo')
-
-            fig2.update_layout(title_text="Temp vs Piogge (50mm ~ 13°C)")
-            st.plotly_chart(fig2, use_container_width=True)
+            
+            # Aggiungiamo 'config' per abilitare il download
+            st.plotly_chart(fig2, use_container_width=True, config=config_chart)
 
     else:
         st.warning("Dati di Piogge Residue o Temperatura Mediana non disponibili per creare il grafico.")
@@ -295,8 +341,23 @@ def display_station_detail(df, station_name):
     fig3 = go.Figure()
     fig3.add_trace(go.Scatter(x=df_station['DATA'], y=df_station['TEMP_MAX'], name='Temp Max', line=dict(color='orangered')))
     fig3.add_trace(go.Scatter(x=df_station['DATA'], y=df_station['TEMP_MIN'], name='Temp Min', line=dict(color='skyblue'), fill='tonexty'))
-    fig3.update_layout(title="Escursione Termica Giornaliera", xaxis_title="Data", yaxis_title="°C")
-    st.plotly_chart(fig3, use_container_width=True)
+
+    # --- NUOVA MODIFICA: IMPOSTA ZOOM E ASSI FISSI PER FIGURA 3 ---
+    # Calcola i valori massimi e minimi sull'intera storia per l'asse Y
+    max_y_temp = df_station['TEMP_MAX'].max() * 1.1 if not df_station['TEMP_MAX'].empty else 40
+    min_y_temp = df_station['TEMP_MIN'].min() * 0.9 if not df_station['TEMP_MIN'].empty else -10
+    
+    fig3.update_layout(
+        title="Escursione Termica Giornaliera",
+        xaxis_title="Data",
+        yaxis_title="°C",
+        xaxis_range=[start_date_default, end_date_default], # Imposta zoom predefinito
+        yaxis_range=[min_y_temp, max_y_temp] # Imposta asse Y fisso
+    )
+    # Aggiungiamo 'config' per abilitare il download
+    st.plotly_chart(fig3, use_container_width=True, config=config_chart)
+    # --- FINE MODIFICA ---
+
 
     # Tabella dati storici completi
     with st.expander("Visualizza tabella dati storici completi"):
@@ -317,6 +378,8 @@ def display_station_detail(df, station_name):
         else:
             st.info("Seleziona almeno una colonna per visualizzare i dati.")
 
+# --- FINE DEL BLOCCO DA COPIARE ---
+
 def main():
     st.set_page_config(page_title="Mappa Funghi Protetta", layout="wide")
     st.title("💧 Analisi Meteo Funghi – by Bobo 🍄")
@@ -336,6 +399,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
